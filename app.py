@@ -118,7 +118,19 @@ def enviar_mensaje(telefono, mensaje):
 @app.route("/", methods=["GET"])
 def home():
     return "🤖 Bot de IT Support and Services SAC está activo!", 200
-
+@app.route("/privacy", methods=["GET"])
+def privacy():
+    return """
+    <html><head><title>Política de Privacidad - IT Support and Services SAC</title></head>
+    <body style="font-family:Arial;max-width:800px;margin:40px auto;padding:20px;">
+    <h1>Política de Privacidad</h1>
+    <p>IT Support and Services SAC recopila únicamente el número de teléfono y la descripción
+    del problema proporcionada por el usuario para fines de soporte técnico.</p>
+    <p>No compartimos esta información con terceros. Los datos se almacenan de forma segura
+    y se utilizan exclusivamente para brindar el servicio solicitado.</p>
+    <p>Contacto: IT Support and Services SAC</p>
+    </body></html>
+    """, 200
 
 @app.route("/webhook", methods=["GET"])
 def verificar_webhook():
