@@ -1,12 +1,12 @@
 import os
 import json
 import threading
-import tempfile
 from datetime import datetime
 from flask import Flask, request, jsonify
 import requests as http_requests
 import gspread
 from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request as GoogleAuthRequest
 
 app = Flask(__name__)
 
@@ -31,6 +31,12 @@ def get_google_creds():
     return creds
 
 
+def get_access_token():
+    creds = get_google_creds()
+    creds.refresh(GoogleAuthRequest())
+    return creds.token
+
+
 def conectar_google_sheets():
     try:
         creds = get_google_creds()
@@ -43,12 +49,7 @@ def conectar_google_sheets():
 
 def subir_imagen_a_drive(image_data, filename):
     try:
-        creds = get_google_creds()
-        creds.refresh(http_requests.Request() if hasattr(http_requests, 'Request') else None)
-        if not creds.valid:
-            from google.auth.transport.requests import Request as AuthRequest
-            creds.refresh(AuthRequest())
-        token = creds.token
+        token = get_access_token()
         metadata = json.dumps({"name": filename, "parents": [DRIVE_FOLDER_ID]})
         boundary = "foo_bar_baz"
         body = (
