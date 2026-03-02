@@ -2,7 +2,7 @@ import os
 import json
 import threading
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import requests as http_requests
 import gspread
@@ -20,10 +20,24 @@ IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY", "")
 ADMIN_PHONE = os.environ.get("ADMIN_PHONE", "51994011725")
 
 TIEMPO_ESPERA = 10
+PERU_UTC_OFFSET = -5
+HORA_RESUMEN = 7
 
+# Estado de cada conversacion
+# {telefono: {"estado": "...", "ticket_actual": None, "hotel": "..."}}
 conversaciones = {}
 buffer_mensajes = {}
 buffer_lock = threading.Lock()
+
+# Cache de hotel por telefono (para no consultar sheets cada vez)
+hotel_cache = {}
+
+SALUDOS = [
+    "hola", "hello", "hi", "hey", "buenas", "buenos dias", "buenas tardes",
+    "buenas noches", "buen dia", "ola", "holi", "que tal", "como estas",
+    "buenas buenas", "saludos", "buena", "bnas", "buen dia", "wenas",
+    "1", "2", "menu"
+]
 
 MENU_PRINCIPAL = (
     "Como podemos ayudarle?\n\n"
@@ -36,15 +50,54 @@ MENU_ADMIN = (
     "Panel de Administrador de *IT Support and Services SAC*\n\n"
     "Comandos disponibles:\n\n"
     "*R[#] [mensaje]* - Responder a un cliente\n"
-    "   Ejemplo: R24 Ya estamos revisando su caso\n\n"
+    "   Ej: R24 Ya estamos revisando su caso\n\n"
     "*E[#] [estado]* - Cambiar estado de ticket\n"
-    "   Ejemplo: E24 En proceso\n"
+    "   Ej: E24 En proceso\n"
     "   Estados: Pendiente, En proceso, Resuelto\n\n"
+    "*P[#] [prioridad]* - Asignar prioridad\n"
+    "   Ej: P24 Alta\n"
+    "   Prioridades: Alta, Media, Baja\n\n"
     "*V[#]* - Ver detalles de un ticket\n"
-    "   Ejemplo: V24\n\n"
+    "   Ej: V24\n\n"
     "*T* - Ver todos los tickets pendientes\n\n"
+    "*H [hotel]* - Filtrar tickets por hotel\n"
+    "   Ej: H Hilton\n\n"
     "*ayuda* - Ver este menu de nuevo"
 )
+
+
+def hora_peru():
+    return datetime.utcnow() + timedelta(hours=PERU_UTC_OFFSET)
+
+
+def es_saludo(texto):
+    texto_limpio = texto.lower().strip()
+    if texto_limpio in SALUDOS:
+        return True
+    palabras = texto_limpio.split()
+    if len(palabras) <= 2:
+        for saludo in SALUDOS:
+            if texto_limpio.startswith(saludo):
+                resto = texto_limpio[len(saludo):].strip().strip(",").strip()
+                if len(resto) < 10:
+                    return True
+    return False
+
+
+def es_descripcion_problema(texto):
+    texto_limpio = texto.lower().strip()
+    if len(texto_limpio) > 20:
+        return True
+    palabras_problema = [
+        "no funciona", "no sirve", "error", "problema", "falla", "ayuda",
+        "no puedo", "no anda", "se trabo", "se colgo", "pantalla azul",
+        "no prende", "no enciende", "lento", "virus", "hackeado",
+        "no conecta", "sin internet", "no imprime", "se apago"
+    ]
+    for palabra in palabras_problema:
+        if palabra in texto_limpio:
+            return True
+    return False
 
 
 def get_google_creds():
@@ -108,22 +161,91 @@ def descargar_media_whatsapp(media_id):
         return None
 
 
+# ============================================
+# GOOGLE SHEETS - FORMATO DE COLUMNAS:
+# A=#, B=Fecha, C=Telefono, D=Hotel, E=Descripcion, F=Estado, G=Prioridad, H=Imagenes
+# ============================================
+
 def obtener_o_crear_hoja():
     client = conectar_google_sheets()
     if not client:
         return None
     try:
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+        # Verificar si tiene el formato nuevo (con Hotel y Prioridad)
+        encabezado = sheet.row_values(1)
+        if len(encabezado) < 8 or "Hotel" not in encabezado:
+            # Migrar al formato nuevo
+            print("Migrando hoja al formato nuevo con Hotel y Prioridad...")
+            migrar_hoja(sheet)
         return sheet
     except gspread.SpreadsheetNotFound:
         try:
             spreadsheet = client.create(GOOGLE_SHEET_NAME)
             sheet = spreadsheet.sheet1
-            sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Descripcion del Problema", "Estado", "Imagenes"])
+            sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Hotel", "Descripcion del Problema", "Estado", "Prioridad", "Imagenes"])
             return sheet
         except Exception as e:
             print(f"Error creando la hoja: {e}")
             return None
+
+
+def migrar_hoja(sheet):
+    """Migra la hoja del formato viejo al nuevo (agrega Hotel y Prioridad)."""
+    try:
+        todas_las_filas = sheet.get_all_values()
+        if not todas_las_filas:
+            sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Hotel", "Descripcion del Problema", "Estado", "Prioridad", "Imagenes"])
+            return
+        # Formato viejo: #, Fecha, Telefono, Descripcion, Estado, Imagenes
+        # Formato nuevo: #, Fecha, Telefono, Hotel, Descripcion, Estado, Prioridad, Imagenes
+        nuevas_filas = []
+        for i, fila in enumerate(todas_las_filas):
+            if i == 0:
+                nuevas_filas.append(["#", "Fecha y Hora", "Telefono del Cliente", "Hotel", "Descripcion del Problema", "Estado", "Prioridad", "Imagenes"])
+                continue
+            # Asegurar que la fila tenga suficientes columnas
+            while len(fila) < 6:
+                fila.append("")
+            nueva_fila = [
+                fila[0],  # #
+                fila[1],  # Fecha
+                fila[2],  # Telefono
+                "Sin especificar",  # Hotel (nuevo)
+                fila[3],  # Descripcion
+                fila[4],  # Estado
+                "Sin asignar",  # Prioridad (nuevo)
+                fila[5],  # Imagenes
+            ]
+            nuevas_filas.append(nueva_fila)
+        # Limpiar hoja y escribir datos nuevos
+        sheet.clear()
+        for fila in nuevas_filas:
+            sheet.append_row(fila)
+        print(f"Migracion completada: {len(nuevas_filas) - 1} tickets migrados")
+    except Exception as e:
+        print(f"Error en migracion: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def buscar_hotel_cliente(telefono):
+    """Busca el hotel de un cliente en sus tickets anteriores."""
+    if telefono in hotel_cache:
+        return hotel_cache[telefono]
+    sheet = obtener_o_crear_hoja()
+    if not sheet:
+        return None
+    try:
+        todas_las_filas = sheet.get_all_values()
+        for fila in reversed(todas_las_filas):
+            if len(fila) >= 4 and fila[2] == telefono and fila[3] and fila[3] != "Sin especificar":
+                hotel_cache[telefono] = fila[3]
+                return fila[3]
+        return None
+    except Exception as e:
+        print(f"Error buscando hotel: {e}")
+        return None
 
 
 def buscar_tickets_cliente(telefono):
@@ -136,12 +258,14 @@ def buscar_tickets_cliente(telefono):
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 continue
-            if len(fila) >= 5 and fila[2] == telefono:
+            if len(fila) >= 6 and fila[2] == telefono:
                 tickets.append({
                     "numero": fila[0],
                     "fecha": fila[1],
-                    "descripcion": fila[3][:80] + ("..." if len(fila[3]) > 80 else ""),
-                    "estado": fila[4],
+                    "hotel": fila[3] if len(fila) > 3 else "",
+                    "descripcion": fila[4][:80] + ("..." if len(fila[4]) > 80 else "") if len(fila) > 4 else "",
+                    "estado": fila[5] if len(fila) > 5 else "Pendiente",
+                    "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
                     "fila": i + 1
                 })
         return tickets
@@ -151,7 +275,6 @@ def buscar_tickets_cliente(telefono):
 
 
 def buscar_tickets_pendientes():
-    """Busca todos los tickets pendientes o en proceso."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return []
@@ -161,17 +284,49 @@ def buscar_tickets_pendientes():
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 continue
-            if len(fila) >= 5 and fila[4] in ["Pendiente", "En proceso"]:
+            if len(fila) >= 6 and fila[5] in ["Pendiente", "En proceso"]:
                 tickets.append({
                     "numero": fila[0],
                     "fecha": fila[1],
                     "telefono": fila[2],
-                    "descripcion": fila[3][:80] + ("..." if len(fila[3]) > 80 else ""),
-                    "estado": fila[4],
+                    "hotel": fila[3] if len(fila) > 3 else "",
+                    "descripcion": fila[4][:80] + ("..." if len(fila[4]) > 80 else "") if len(fila) > 4 else "",
+                    "estado": fila[5],
+                    "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
                 })
         return tickets
     except Exception as e:
         print(f"Error buscando tickets pendientes: {e}")
+        return []
+
+
+def buscar_tickets_por_hotel(hotel_buscar):
+    """Busca tickets pendientes de un hotel especifico."""
+    sheet = obtener_o_crear_hoja()
+    if not sheet:
+        return []
+    try:
+        todas_las_filas = sheet.get_all_values()
+        tickets = []
+        hotel_lower = hotel_buscar.lower()
+        for i, fila in enumerate(todas_las_filas):
+            if i == 0:
+                continue
+            if len(fila) >= 6 and fila[5] in ["Pendiente", "En proceso"]:
+                hotel_fila = fila[3].lower() if len(fila) > 3 else ""
+                if hotel_lower in hotel_fila:
+                    tickets.append({
+                        "numero": fila[0],
+                        "fecha": fila[1],
+                        "telefono": fila[2],
+                        "hotel": fila[3] if len(fila) > 3 else "",
+                        "descripcion": fila[4][:80] + ("..." if len(fila[4]) > 80 else "") if len(fila) > 4 else "",
+                        "estado": fila[5],
+                        "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
+                    })
+        return tickets
+    except Exception as e:
+        print(f"Error buscando tickets por hotel: {e}")
         return []
 
 
@@ -184,14 +339,16 @@ def obtener_ticket(numero_ticket):
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 continue
-            if len(fila) >= 5 and fila[0] == str(numero_ticket):
+            if len(fila) >= 6 and fila[0] == str(numero_ticket):
                 return {
                     "numero": fila[0],
                     "fecha": fila[1],
                     "telefono": fila[2],
-                    "descripcion": fila[3],
-                    "estado": fila[4],
-                    "imagenes": fila[5] if len(fila) > 5 else "",
+                    "hotel": fila[3] if len(fila) > 3 else "",
+                    "descripcion": fila[4] if len(fila) > 4 else "",
+                    "estado": fila[5] if len(fila) > 5 else "Pendiente",
+                    "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
+                    "imagenes": fila[7] if len(fila) > 7 else "",
                     "fila": i + 1
                 }
         return None
@@ -201,7 +358,6 @@ def obtener_ticket(numero_ticket):
 
 
 def cambiar_estado_ticket(numero_ticket, nuevo_estado):
-    """Cambia el estado de un ticket."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return False
@@ -210,14 +366,33 @@ def cambiar_estado_ticket(numero_ticket, nuevo_estado):
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 continue
-            if len(fila) >= 5 and fila[0] == str(numero_ticket):
-                fila_num = i + 1
-                sheet.update_cell(fila_num, 5, nuevo_estado)
+            if len(fila) >= 6 and fila[0] == str(numero_ticket):
+                sheet.update_cell(i + 1, 6, nuevo_estado)
                 print(f"Estado del ticket #{numero_ticket} cambiado a: {nuevo_estado}")
                 return True
         return False
     except Exception as e:
         print(f"Error cambiando estado: {e}")
+        return False
+
+
+def cambiar_prioridad_ticket(numero_ticket, nueva_prioridad):
+    """Cambia la prioridad de un ticket."""
+    sheet = obtener_o_crear_hoja()
+    if not sheet:
+        return False
+    try:
+        todas_las_filas = sheet.get_all_values()
+        for i, fila in enumerate(todas_las_filas):
+            if i == 0:
+                continue
+            if len(fila) >= 6 and fila[0] == str(numero_ticket):
+                sheet.update_cell(i + 1, 7, nueva_prioridad)
+                print(f"Prioridad del ticket #{numero_ticket} cambiada a: {nueva_prioridad}")
+                return True
+        return False
+    except Exception as e:
+        print(f"Error cambiando prioridad: {e}")
         return False
 
 
@@ -230,20 +405,20 @@ def agregar_info_a_ticket(numero_ticket, nueva_info, nuevas_imagenes=None):
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 continue
-            if len(fila) >= 5 and fila[0] == str(numero_ticket):
+            if len(fila) >= 6 and fila[0] == str(numero_ticket):
                 fila_num = i + 1
-                ahora = datetime.now().strftime("%Y-%m-%d %H:%M")
-                descripcion_actual = fila[3]
+                ahora = hora_peru().strftime("%Y-%m-%d %H:%M")
+                descripcion_actual = fila[4] if len(fila) > 4 else ""
                 descripcion_nueva = f"{descripcion_actual}\n\n--- Actualizacion ({ahora}) ---\n{nueva_info}"
-                sheet.update_cell(fila_num, 4, descripcion_nueva)
+                sheet.update_cell(fila_num, 5, descripcion_nueva)
                 if nuevas_imagenes:
-                    imagenes_actuales = fila[5] if len(fila) > 5 else ""
+                    imagenes_actuales = fila[7] if len(fila) > 7 else ""
                     nuevos_links = "\n".join(nuevas_imagenes)
                     if imagenes_actuales:
                         imagenes_nueva = f"{imagenes_actuales}\n{nuevos_links}"
                     else:
                         imagenes_nueva = nuevos_links
-                    sheet.update_cell(fila_num, 6, imagenes_nueva)
+                    sheet.update_cell(fila_num, 8, imagenes_nueva)
                 print(f"Info agregada al ticket #{numero_ticket}")
                 return True
         return False
@@ -252,20 +427,20 @@ def agregar_info_a_ticket(numero_ticket, nueva_info, nuevas_imagenes=None):
         return False
 
 
-def guardar_ticket(telefono, descripcion, imagenes=None):
+def guardar_ticket(telefono, hotel, descripcion, imagenes=None):
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return 0
     try:
         todas_las_filas = sheet.get_all_values()
         numero_ticket = len(todas_las_filas)
-        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ahora = hora_peru().strftime("%Y-%m-%d %H:%M:%S")
         links_imagenes = ""
         if imagenes:
             links_imagenes = "\n".join(imagenes)
-        nueva_fila = [numero_ticket, ahora, telefono, descripcion, "Pendiente", links_imagenes]
+        nueva_fila = [numero_ticket, ahora, telefono, hotel, descripcion, "Pendiente", "Sin asignar", links_imagenes]
         sheet.append_row(nueva_fila)
-        print(f"Ticket #{numero_ticket} guardado: {telefono}")
+        print(f"Ticket #{numero_ticket} guardado: {telefono} - Hotel: {hotel}")
         return numero_ticket
     except Exception as e:
         print(f"Error guardando ticket: {e}")
@@ -295,13 +470,21 @@ def enviar_mensaje(telefono, mensaje):
 
 
 def notificar_admin(mensaje):
-    """Envia una notificacion al administrador."""
     enviar_mensaje(ADMIN_PHONE, mensaje)
 
 
 def formatear_telefono(telefono):
-    """Formatea el telefono para que sea clickeable en WhatsApp."""
     return f"+{telefono}"
+
+
+def prioridad_emoji(prioridad):
+    if prioridad == "Alta":
+        return "🔴"
+    elif prioridad == "Media":
+        return "🟠"
+    elif prioridad == "Baja":
+        return "🟢"
+    return "⚪"
 
 
 def get_estado(telefono):
@@ -310,12 +493,24 @@ def get_estado(telefono):
     return conversaciones[telefono].get("estado")
 
 
-def set_estado(telefono, estado, ticket_actual=None):
+def get_hotel(telefono):
+    """Obtiene el hotel del cliente desde la conversacion o cache."""
+    if telefono in conversaciones and conversaciones[telefono]:
+        hotel = conversaciones[telefono].get("hotel")
+        if hotel:
+            return hotel
+    return hotel_cache.get(telefono)
+
+
+def set_estado(telefono, estado, ticket_actual=None, hotel=None):
     if conversaciones.get(telefono) is None:
         conversaciones[telefono] = {}
     conversaciones[telefono]["estado"] = estado
     if ticket_actual is not None:
         conversaciones[telefono]["ticket_actual"] = ticket_actual
+    if hotel is not None:
+        conversaciones[telefono]["hotel"] = hotel
+        hotel_cache[telefono] = hotel
 
 
 def procesar_nuevo_ticket(telefono):
@@ -326,7 +521,8 @@ def procesar_nuevo_ticket(telefono):
         imagenes = buffer_mensajes[telefono].get("imagenes", [])
         del buffer_mensajes[telefono]
     descripcion_completa = "\n".join(mensajes) if mensajes else "(Solo imagenes)"
-    numero_ticket = guardar_ticket(telefono, descripcion_completa, imagenes if imagenes else None)
+    hotel = get_hotel(telefono) or "Sin especificar"
+    numero_ticket = guardar_ticket(telefono, hotel, descripcion_completa, imagenes if imagenes else None)
     if numero_ticket > 0:
         resumen = descripcion_completa[:200]
         if len(descripcion_completa) > 200:
@@ -334,27 +530,30 @@ def procesar_nuevo_ticket(telefono):
         img_texto = ""
         if imagenes:
             img_texto = f"\n\n{len(imagenes)} imagen(es) adjunta(s)"
-        # Mensaje al cliente
         enviar_mensaje(
             telefono,
             f"Muchas gracias por contactarnos!\n\n"
             f"Su ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
+            f"🏨 Hotel: *{hotel}*\n"
             f"Resumen:\n{resumen}{img_texto}\n\n"
             f"Un miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\n"
             f"Gracias por confiar en *IT Support and Services SAC*!"
         )
-        # Notificacion al admin
         img_admin = ""
         if imagenes:
             img_admin = f"\n📎 {len(imagenes)} imagen(es):\n" + "\n".join(imagenes)
+        pendientes = buscar_tickets_pendientes()
         notificar_admin(
             f"🆕 *NUEVO TICKET #{numero_ticket}*\n\n"
+            f"🏨 Hotel: *{hotel}*\n"
             f"📞 Cliente: {formatear_telefono(telefono)}\n"
-            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            f"🕐 {hora_peru().strftime('%Y-%m-%d %H:%M')}\n\n"
             f"📝 {resumen}{img_admin}\n\n"
+            f"📊 Tickets pendientes: *{len(pendientes)}*\n\n"
             f"---\n"
-            f"Responder: *R{numero_ticket} [tu mensaje]*\n"
-            f"Estado: *E{numero_ticket} En proceso*"
+            f"Responder: *R{numero_ticket} [mensaje]*\n"
+            f"Estado: *E{numero_ticket} En proceso*\n"
+            f"Prioridad: *P{numero_ticket} Alta/Media/Baja*"
         )
     else:
         enviar_mensaje(
@@ -383,18 +582,18 @@ def procesar_info_adicional(telefono):
         img_texto = ""
         if imagenes:
             img_texto = f"\n{len(imagenes)} imagen(es) adjunta(s)"
-        # Mensaje al cliente
         enviar_mensaje(
             telefono,
             f"Informacion agregada exitosamente al ticket *#{ticket_actual}*.{img_texto}\n\n"
             f"Gracias por confiar en *IT Support and Services SAC*!"
         )
-        # Notificacion al admin
         img_admin = ""
         if imagenes:
             img_admin = f"\n📎 {len(imagenes)} imagen(es):\n" + "\n".join(imagenes)
+        hotel = get_hotel(telefono) or "Sin especificar"
         notificar_admin(
             f"📎 *ACTUALIZACION TICKET #{ticket_actual}*\n\n"
+            f"🏨 Hotel: *{hotel}*\n"
             f"📞 Cliente: {formatear_telefono(telefono)}\n\n"
             f"📝 {nueva_info[:200]}{img_admin}\n\n"
             f"---\n"
@@ -433,7 +632,7 @@ def procesar_imagen(telefono, mensaje, tipo_proceso):
     if media_id:
         image_data = descargar_media_whatsapp(media_id)
         if image_data:
-            ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ahora = hora_peru().strftime("%Y%m%d_%H%M%S")
             filename = f"ticket_{telefono}_{ahora}"
             link = subir_imagen_a_imgbb(image_data, filename)
             if link:
@@ -445,30 +644,125 @@ def procesar_imagen(telefono, mensaje, tipo_proceso):
 
 
 # ============================================
+# RESUMEN DIARIO
+# ============================================
+
+def enviar_resumen_diario():
+    try:
+        ahora = hora_peru()
+        tickets = buscar_tickets_pendientes()
+        pendientes = [t for t in tickets if t["estado"] == "Pendiente"]
+        en_proceso = [t for t in tickets if t["estado"] == "En proceso"]
+
+        mensaje = f"☀️ *RESUMEN DIARIO - {ahora.strftime('%d/%m/%Y')}*\n\n"
+
+        if not tickets:
+            mensaje += "✅ No hay tickets abiertos. Todo al dia!"
+        else:
+            mensaje += f"📊 *{len(tickets)} ticket(s) abierto(s)*\n"
+            mensaje += f"   🟡 Pendientes: {len(pendientes)}\n"
+            mensaje += f"   🔵 En proceso: {len(en_proceso)}\n\n"
+
+            # Agrupar por hotel
+            hoteles = {}
+            for t in tickets:
+                h = t.get("hotel", "Sin especificar")
+                if h not in hoteles:
+                    hoteles[h] = []
+                hoteles[h].append(t)
+
+            for hotel, tks in hoteles.items():
+                mensaje += f"🏨 *{hotel}* ({len(tks)} tickets):\n"
+                for t in tks:
+                    estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+                    p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+                    mensaje += (
+                        f"   {estado_emoji}{p_emoji} Ticket #{t['numero']} - {t['estado']}\n"
+                        f"      📞 {formatear_telefono(t['telefono'])}\n"
+                        f"      📝 {t['descripcion']}\n\n"
+                    )
+
+        notificar_admin(mensaje)
+        print(f"Resumen diario enviado: {ahora.strftime('%Y-%m-%d %H:%M')}")
+    except Exception as e:
+        print(f"Error enviando resumen diario: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def programar_resumen_diario():
+    ahora = hora_peru()
+    proxima = ahora.replace(hour=HORA_RESUMEN, minute=0, second=0, microsecond=0)
+    if ahora >= proxima:
+        proxima += timedelta(days=1)
+    segundos_hasta = (proxima - ahora).total_seconds()
+    print(f"Proximo resumen diario en {segundos_hasta/3600:.1f} horas ({proxima.strftime('%Y-%m-%d %H:%M')} hora Peru)")
+    timer = threading.Timer(segundos_hasta, ejecutar_y_reprogramar)
+    timer.daemon = True
+    timer.start()
+
+
+def ejecutar_y_reprogramar():
+    enviar_resumen_diario()
+    programar_resumen_diario()
+
+
+# ============================================
 # FUNCIONES ADMIN
 # ============================================
 
 def procesar_comando_admin(texto_original):
-    """Procesa los comandos del administrador."""
     texto = texto_original.strip()
     texto_lower = texto.lower()
 
-    # Comando: ayuda
-    if texto_lower == "ayuda" or texto_lower == "help" or texto_lower == "menu":
+    if texto_lower in ["ayuda", "help", "menu"]:
         enviar_mensaje(ADMIN_PHONE, MENU_ADMIN)
         return
 
-    # Comando: T - ver tickets pendientes
     if texto_lower == "t":
         tickets = buscar_tickets_pendientes()
         if not tickets:
             enviar_mensaje(ADMIN_PHONE, "✅ No hay tickets pendientes!")
             return
+        # Agrupar por hotel
+        hoteles = {}
+        for t in tickets:
+            h = t.get("hotel", "Sin especificar")
+            if h not in hoteles:
+                hoteles[h] = []
+            hoteles[h].append(t)
         lista = f"📋 *Tickets abiertos ({len(tickets)}):*\n\n"
+        for hotel, tks in hoteles.items():
+            lista += f"🏨 *{hotel}*\n"
+            for t in tks:
+                estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+                p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+                lista += (
+                    f"   {estado_emoji}{p_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
+                    f"      📞 {formatear_telefono(t['telefono'])}\n"
+                    f"      🕐 {t['fecha']}\n"
+                    f"      📝 {t['descripcion']}\n\n"
+                )
+        enviar_mensaje(ADMIN_PHONE, lista)
+        return
+
+    # Comando: H [hotel] - filtrar por hotel
+    if texto_lower.startswith("h "):
+        hotel_buscar = texto[2:].strip()
+        if not hotel_buscar:
+            enviar_mensaje(ADMIN_PHONE, "❌ Formato: *H Hilton*")
+            return
+        tickets = buscar_tickets_por_hotel(hotel_buscar)
+        if not tickets:
+            enviar_mensaje(ADMIN_PHONE, f"✅ No hay tickets pendientes para hotel que contenga: *{hotel_buscar}*")
+            return
+        lista = f"🏨 *Tickets de '{hotel_buscar}' ({len(tickets)}):*\n\n"
         for t in tickets:
             estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+            p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
             lista += (
-                f"{estado_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
+                f"{estado_emoji}{p_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
+                f"   🏨 {t['hotel']}\n"
                 f"   📞 {formatear_telefono(t['telefono'])}\n"
                 f"   🕐 {t['fecha']}\n"
                 f"   📝 {t['descripcion']}\n\n"
@@ -476,26 +770,29 @@ def procesar_comando_admin(texto_original):
         enviar_mensaje(ADMIN_PHONE, lista)
         return
 
-    # Comando: V[numero] - ver ticket
     if texto_lower.startswith("v"):
         try:
             numero = texto[1:].strip()
             ticket = obtener_ticket(numero)
             if ticket:
                 estado_emoji = "🟡" if ticket["estado"] == "Pendiente" else ("🔵" if ticket["estado"] == "En proceso" else "🟢")
+                p_emoji = prioridad_emoji(ticket.get("prioridad", "Sin asignar"))
                 detalle = (
                     f"{estado_emoji} *Ticket #{ticket['numero']}*\n\n"
+                    f"🏨 Hotel: *{ticket.get('hotel', 'Sin especificar')}*\n"
                     f"📞 Cliente: {formatear_telefono(ticket['telefono'])}\n"
                     f"🕐 Fecha: {ticket['fecha']}\n"
-                    f"📊 Estado: {ticket['estado']}\n\n"
+                    f"📊 Estado: {ticket['estado']}\n"
+                    f"{p_emoji} Prioridad: {ticket.get('prioridad', 'Sin asignar')}\n\n"
                     f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
                 )
-                if ticket["imagenes"]:
+                if ticket.get("imagenes"):
                     detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
                 detalle += (
                     f"\n---\n"
                     f"Responder: *R{ticket['numero']} [mensaje]*\n"
-                    f"Cambiar estado: *E{ticket['numero']} [estado]*"
+                    f"Estado: *E{ticket['numero']} [estado]*\n"
+                    f"Prioridad: *P{ticket['numero']} Alta/Media/Baja*"
                 )
                 enviar_mensaje(ADMIN_PHONE, detalle)
             else:
@@ -504,10 +801,8 @@ def procesar_comando_admin(texto_original):
             enviar_mensaje(ADMIN_PHONE, "❌ Formato incorrecto. Use: *V24*")
         return
 
-    # Comando: R[numero] [mensaje] - responder a cliente
     if texto_lower.startswith("r"):
         try:
-            # Separar numero de ticket del mensaje
             resto = texto[1:].strip()
             partes = resto.split(" ", 1)
             if len(partes) < 2:
@@ -517,21 +812,14 @@ def procesar_comando_admin(texto_original):
             mensaje_respuesta = partes[1].strip()
             ticket = obtener_ticket(numero)
             if ticket:
-                # Enviar respuesta al cliente
                 enviar_mensaje(
                     ticket["telefono"],
                     f"📩 *Respuesta de IT Support and Services SAC*\n"
                     f"_(Ticket #{ticket['numero']})_\n\n"
                     f"{mensaje_respuesta}"
                 )
-                # Guardar respuesta en el ticket
-                ahora = datetime.now().strftime("%Y-%m-%d %H:%M")
-                agregar_info_a_ticket(
-                    numero,
-                    f"[RESPUESTA ADMIN] {mensaje_respuesta}"
-                )
-                # Confirmar al admin
-                enviar_mensaje(ADMIN_PHONE, f"✅ Respuesta enviada al cliente del ticket #{numero}")
+                agregar_info_a_ticket(numero, f"[RESPUESTA ADMIN] {mensaje_respuesta}")
+                enviar_mensaje(ADMIN_PHONE, f"✅ Respuesta enviada al cliente del ticket #{numero} ({ticket.get('hotel', '')})")
             else:
                 enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
         except Exception as e:
@@ -539,7 +827,41 @@ def procesar_comando_admin(texto_original):
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *R24 Tu mensaje aqui*")
         return
 
-    # Comando: E[numero] [estado] - cambiar estado
+    # Comando: P[numero] [prioridad] - cambiar prioridad
+    if texto_lower.startswith("p"):
+        try:
+            resto = texto[1:].strip()
+            partes = resto.split(" ", 1)
+            if len(partes) < 2:
+                enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*\nPrioridades: Alta, Media, Baja")
+                return
+            numero = partes[0].strip()
+            nueva_prioridad = partes[1].strip()
+            prioridad_lower = nueva_prioridad.lower()
+            if prioridad_lower in ["alta", "urgente", "critica"]:
+                nueva_prioridad = "Alta"
+            elif prioridad_lower in ["media", "normal"]:
+                nueva_prioridad = "Media"
+            elif prioridad_lower in ["baja", "menor"]:
+                nueva_prioridad = "Baja"
+            else:
+                enviar_mensaje(ADMIN_PHONE, f"❌ Prioridad no valida: {nueva_prioridad}\nUse: Alta, Media, o Baja")
+                return
+            ticket = obtener_ticket(numero)
+            if ticket:
+                exito = cambiar_prioridad_ticket(numero, nueva_prioridad)
+                if exito:
+                    p_emoji = prioridad_emoji(nueva_prioridad)
+                    enviar_mensaje(ADMIN_PHONE, f"{p_emoji} Ticket #{numero} prioridad actualizada a: *{nueva_prioridad}*")
+                else:
+                    enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando prioridad del ticket #{numero}")
+            else:
+                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
+        except Exception as e:
+            print(f"Error en comando P: {e}")
+            enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*")
+        return
+
     if texto_lower.startswith("e"):
         try:
             resto = texto[1:].strip()
@@ -549,7 +871,6 @@ def procesar_comando_admin(texto_original):
                 return
             numero = partes[0].strip()
             nuevo_estado = partes[1].strip()
-            # Normalizar estado
             estado_lower = nuevo_estado.lower()
             if estado_lower in ["pendiente"]:
                 nuevo_estado = "Pendiente"
@@ -566,7 +887,6 @@ def procesar_comando_admin(texto_original):
                 if exito:
                     estado_emoji = "🟡" if nuevo_estado == "Pendiente" else ("🔵" if nuevo_estado == "En proceso" else "🟢")
                     enviar_mensaje(ADMIN_PHONE, f"{estado_emoji} Ticket #{numero} actualizado a: *{nuevo_estado}*")
-                    # Notificar al cliente del cambio de estado
                     enviar_mensaje(
                         ticket["telefono"],
                         f"📋 *Actualizacion de su ticket #{numero}*\n\n"
@@ -583,11 +903,7 @@ def procesar_comando_admin(texto_original):
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *E24 En proceso*")
         return
 
-    # Si no es ningun comando reconocido
-    enviar_mensaje(
-        ADMIN_PHONE,
-        f"No reconozco ese comando.\n\n{MENU_ADMIN}"
-    )
+    enviar_mensaje(ADMIN_PHONE, f"No reconozco ese comando.\n\n{MENU_ADMIN}")
 
 
 # ============================================
@@ -631,45 +947,112 @@ def recibir_mensaje():
         tipo_mensaje = mensaje.get("type", "")
 
         texto = ""
+        texto_original = ""
         if tipo_mensaje == "text":
-            texto = mensaje.get("text", {}).get("body", "").strip()
+            texto_original = mensaje.get("text", {}).get("body", "").strip()
+            texto = texto_original.lower()
 
         # ============================================
-        # ADMIN: Si el mensaje es del admin, procesar como comando
+        # ADMIN
         # ============================================
         if telefono == ADMIN_PHONE:
             if tipo_mensaje == "text":
-                procesar_comando_admin(texto)
+                procesar_comando_admin(texto_original)
             else:
                 enviar_mensaje(ADMIN_PHONE, "Los comandos de admin solo funcionan con texto.\n\n" + MENU_ADMIN)
             return jsonify({"status": "ok"}), 200
 
         # ============================================
-        # CLIENTE: Flujo normal del cliente
+        # CLIENTE
         # ============================================
-        texto_lower = texto.lower()
         estado = get_estado(telefono)
+        hotel_conocido = get_hotel(telefono)
 
+        # Si no conocemos el hotel, buscar en tickets anteriores
+        if not hotel_conocido:
+            hotel_conocido = buscar_hotel_cliente(telefono)
+            if hotel_conocido:
+                if conversaciones.get(telefono) is None:
+                    conversaciones[telefono] = {}
+                conversaciones[telefono]["hotel"] = hotel_conocido
+                hotel_cache[telefono] = hotel_conocido
+
+        # ============================================
+        # ESTADO: Esperando nombre del hotel (cliente nuevo)
+        # ============================================
+        if estado == "esperando_hotel":
+            if tipo_mensaje == "text" and texto_original:
+                hotel = texto_original.strip()
+                set_estado(telefono, "menu", hotel=hotel)
+                enviar_mensaje(
+                    telefono,
+                    f"Gracias! Registrado como contacto de *{hotel}*.\n\n{MENU_PRINCIPAL}"
+                )
+            else:
+                enviar_mensaje(telefono, "Por favor, escriba el nombre del hotel desde donde nos contacta.")
+            return jsonify({"status": "ok"}), 200
+
+        # ============================================
         # Primera vez o conversacion reseteada
-        if estado is None:
-            enviar_mensaje(
-                telefono,
-                f"Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
-                f"{MENU_PRINCIPAL}"
-            )
-            set_estado(telefono, "menu")
+        # ============================================
+        if estado is None or estado == "listo":
+            # Si no conocemos el hotel, preguntar primero
+            if not hotel_conocido:
+                enviar_mensaje(
+                    telefono,
+                    "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                    "Somos su aliado en soporte tecnico y servicios de TI.\n\n"
+                    "Para poder atenderle mejor, por favor indiquenos:\n"
+                    "*De que hotel nos esta contactando?*"
+                )
+                set_estado(telefono, "esperando_hotel")
+                return jsonify({"status": "ok"}), 200
+
+            # Ya conocemos el hotel - deteccion inteligente
+            if tipo_mensaje == "text":
+                if es_saludo(texto) and not es_descripcion_problema(texto):
+                    if estado is None:
+                        enviar_mensaje(
+                            telefono,
+                            f"Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                            f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
+                            f"{MENU_PRINCIPAL}"
+                        )
+                    else:
+                        enviar_mensaje(telefono, MENU_PRINCIPAL)
+                    set_estado(telefono, "menu")
+                else:
+                    enviar_mensaje(
+                        telefono,
+                        "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                        "Estamos registrando su reporte. Si desea agregar mas detalles o imagenes, "
+                        "envielos ahora. Su ticket se creara en unos segundos."
+                    )
+                    set_estado(telefono, "acumulando_nuevo")
+                    agregar_al_buffer(telefono, "nuevo", texto=texto_original)
+            elif tipo_mensaje == "image":
+                enviar_mensaje(
+                    telefono,
+                    "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                    "Estamos registrando su reporte. Si desea agregar mas detalles o imagenes, "
+                    "envielos ahora. Su ticket se creara en unos segundos."
+                )
+                set_estado(telefono, "acumulando_nuevo")
+                procesar_imagen(telefono, mensaje, "nuevo")
+            else:
+                enviar_mensaje(
+                    telefono,
+                    f"Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                    f"{MENU_PRINCIPAL}"
+                )
+                set_estado(telefono, "menu")
             return jsonify({"status": "ok"}), 200
 
-        # Estado "listo" - cliente escribe de nuevo despues de una accion
-        if estado == "listo":
-            enviar_mensaje(telefono, MENU_PRINCIPAL)
-            set_estado(telefono, "menu")
-            return jsonify({"status": "ok"}), 200
-
+        # ============================================
         # Menu principal
+        # ============================================
         if estado == "menu":
-            if texto_lower == "1":
+            if texto == "1":
                 enviar_mensaje(
                     telefono,
                     "Por favor, describanos el problema o consulta que tiene.\n\n"
@@ -677,7 +1060,7 @@ def recibir_mensaje():
                     "_(Escriba *menu* en cualquier momento para volver al menu principal)_"
                 )
                 set_estado(telefono, "esperando_problema")
-            elif texto_lower == "2":
+            elif texto == "2":
                 tickets = buscar_tickets_cliente(telefono)
                 if not tickets:
                     enviar_mensaje(
@@ -699,15 +1082,15 @@ def recibir_mensaje():
                 enviar_mensaje(telefono, "Por favor, responda con *1* o *2*.\n\n" + MENU_PRINCIPAL)
             return jsonify({"status": "ok"}), 200
 
-        # Esperando descripcion del problema (nuevo ticket)
+        # Esperando descripcion del problema
         if estado == "esperando_problema":
-            if texto_lower == "menu":
+            if texto == "menu":
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             set_estado(telefono, "acumulando_nuevo")
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "nuevo", texto=texto)
+                agregar_al_buffer(telefono, "nuevo", texto=texto_original)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "nuevo")
             else:
@@ -716,7 +1099,7 @@ def recibir_mensaje():
 
         # Acumulando mensajes para nuevo ticket
         if estado == "acumulando_nuevo":
-            if texto_lower == "menu":
+            if texto == "menu":
                 with buffer_lock:
                     if telefono in buffer_mensajes:
                         if buffer_mensajes[telefono]["timer"]:
@@ -726,21 +1109,21 @@ def recibir_mensaje():
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "nuevo", texto=texto)
+                agregar_al_buffer(telefono, "nuevo", texto=texto_original)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "nuevo")
             else:
                 enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
-        # Listando tickets, esperando seleccion
+        # Listando tickets
         if estado == "listando_tickets":
-            if texto_lower == "menu":
+            if texto == "menu":
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             try:
-                numero_ticket = texto_lower.replace("#", "").strip()
+                numero_ticket = texto.replace("#", "").strip()
                 ticket = obtener_ticket(numero_ticket)
                 if ticket and ticket["telefono"] == telefono:
                     estado_emoji = "🟡" if ticket["estado"] == "Pendiente" else ("🔵" if ticket["estado"] == "En proceso" else "🟢")
@@ -750,7 +1133,7 @@ def recibir_mensaje():
                         f"*Estado:* {ticket['estado']}\n\n"
                         f"*Descripcion:*\n{ticket['descripcion']}\n"
                     )
-                    if ticket["imagenes"]:
+                    if ticket.get("imagenes"):
                         detalle += f"\n*Imagenes:*\n{ticket['imagenes']}\n"
                     detalle += (
                         f"\n---\n"
@@ -763,7 +1146,7 @@ def recibir_mensaje():
                 else:
                     enviar_mensaje(
                         telefono,
-                        "No se encontro ese ticket o no le pertenece. Por favor escriba un numero de ticket valido.\n\n"
+                        "No se encontro ese ticket o no le pertenece.\n\n"
                         "_(Escriba *menu* para volver al menu principal)_"
                     )
             except Exception:
@@ -774,9 +1157,9 @@ def recibir_mensaje():
                 )
             return jsonify({"status": "ok"}), 200
 
-        # Viendo un ticket, esperando accion
+        # Viendo un ticket
         if estado == "viendo_ticket":
-            if texto_lower == "1":
+            if texto == "1":
                 enviar_mensaje(
                     telefono,
                     "Envie la informacion adicional que desea agregar al ticket.\n\n"
@@ -784,22 +1167,22 @@ def recibir_mensaje():
                     "_(Escriba *menu* para cancelar y volver al menu principal)_"
                 )
                 set_estado(telefono, "esperando_info")
-            elif texto_lower == "2" or texto_lower == "menu":
+            elif texto == "2" or texto == "menu":
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
             else:
                 enviar_mensaje(telefono, "Por favor, responda con *1* para agregar informacion o *2* para volver al menu.")
             return jsonify({"status": "ok"}), 200
 
-        # Esperando info adicional para ticket existente
+        # Esperando info adicional
         if estado == "esperando_info":
-            if texto_lower == "menu":
+            if texto == "menu":
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             set_estado(telefono, "acumulando_info")
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "info", texto=texto)
+                agregar_al_buffer(telefono, "info", texto=texto_original)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "info")
             else:
@@ -808,7 +1191,7 @@ def recibir_mensaje():
 
         # Acumulando info adicional
         if estado == "acumulando_info":
-            if texto_lower == "menu":
+            if texto == "menu":
                 with buffer_lock:
                     if telefono in buffer_mensajes:
                         if buffer_mensajes[telefono]["timer"]:
@@ -818,14 +1201,14 @@ def recibir_mensaje():
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "info", texto=texto)
+                agregar_al_buffer(telefono, "info", texto=texto_original)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "info")
             else:
                 enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
-        # Estado desconocido - resetear
+        # Estado desconocido
         enviar_mensaje(telefono, MENU_PRINCIPAL)
         set_estado(telefono, "menu")
 
@@ -835,6 +1218,9 @@ def recibir_mensaje():
         traceback.print_exc()
     return jsonify({"status": "ok"}), 200
 
+
+# Programar resumen diario al iniciar
+programar_resumen_diario()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
