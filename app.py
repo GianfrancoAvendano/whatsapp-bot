@@ -23,13 +23,9 @@ TIEMPO_ESPERA = 10
 PERU_UTC_OFFSET = -5
 HORA_RESUMEN = 7
 
-# Estado de cada conversacion
-# {telefono: {"estado": "...", "ticket_actual": None, "hotel": "..."}}
 conversaciones = {}
 buffer_mensajes = {}
 buffer_lock = threading.Lock()
-
-# Cache de hotel por telefono (para no consultar sheets cada vez)
 hotel_cache = {}
 
 SALUDOS = [
@@ -62,6 +58,7 @@ MENU_ADMIN = (
     "*T* - Ver todos los tickets pendientes\n\n"
     "*H [hotel]* - Filtrar tickets por hotel\n"
     "   Ej: H Hilton\n\n"
+    "*resumen* - Ver resumen de tickets ahora\n\n"
     "*ayuda* - Ver este menu de nuevo"
 )
 
@@ -161,21 +158,14 @@ def descargar_media_whatsapp(media_id):
         return None
 
 
-# ============================================
-# GOOGLE SHEETS - FORMATO DE COLUMNAS:
-# A=#, B=Fecha, C=Telefono, D=Hotel, E=Descripcion, F=Estado, G=Prioridad, H=Imagenes
-# ============================================
-
 def obtener_o_crear_hoja():
     client = conectar_google_sheets()
     if not client:
         return None
     try:
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
-        # Verificar si tiene el formato nuevo (con Hotel y Prioridad)
         encabezado = sheet.row_values(1)
         if len(encabezado) < 8 or "Hotel" not in encabezado:
-            # Migrar al formato nuevo
             print("Migrando hoja al formato nuevo con Hotel y Prioridad...")
             migrar_hoja(sheet)
         return sheet
@@ -191,34 +181,26 @@ def obtener_o_crear_hoja():
 
 
 def migrar_hoja(sheet):
-    """Migra la hoja del formato viejo al nuevo (agrega Hotel y Prioridad)."""
     try:
         todas_las_filas = sheet.get_all_values()
         if not todas_las_filas:
             sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Hotel", "Descripcion del Problema", "Estado", "Prioridad", "Imagenes"])
             return
-        # Formato viejo: #, Fecha, Telefono, Descripcion, Estado, Imagenes
-        # Formato nuevo: #, Fecha, Telefono, Hotel, Descripcion, Estado, Prioridad, Imagenes
         nuevas_filas = []
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
                 nuevas_filas.append(["#", "Fecha y Hora", "Telefono del Cliente", "Hotel", "Descripcion del Problema", "Estado", "Prioridad", "Imagenes"])
                 continue
-            # Asegurar que la fila tenga suficientes columnas
             while len(fila) < 6:
                 fila.append("")
             nueva_fila = [
-                fila[0],  # #
-                fila[1],  # Fecha
-                fila[2],  # Telefono
-                "Sin especificar",  # Hotel (nuevo)
-                fila[3],  # Descripcion
-                fila[4],  # Estado
-                "Sin asignar",  # Prioridad (nuevo)
-                fila[5],  # Imagenes
+                fila[0], fila[1], fila[2],
+                "Sin especificar",
+                fila[3], fila[4],
+                "Sin asignar",
+                fila[5],
             ]
             nuevas_filas.append(nueva_fila)
-        # Limpiar hoja y escribir datos nuevos
         sheet.clear()
         for fila in nuevas_filas:
             sheet.append_row(fila)
@@ -230,7 +212,6 @@ def migrar_hoja(sheet):
 
 
 def buscar_hotel_cliente(telefono):
-    """Busca el hotel de un cliente en sus tickets anteriores."""
     if telefono in hotel_cache:
         return hotel_cache[telefono]
     sheet = obtener_o_crear_hoja()
@@ -301,7 +282,6 @@ def buscar_tickets_pendientes():
 
 
 def buscar_tickets_por_hotel(hotel_buscar):
-    """Busca tickets pendientes de un hotel especifico."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return []
@@ -377,7 +357,6 @@ def cambiar_estado_ticket(numero_ticket, nuevo_estado):
 
 
 def cambiar_prioridad_ticket(numero_ticket, nueva_prioridad):
-    """Cambia la prioridad de un ticket."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return False
@@ -494,7 +473,6 @@ def get_estado(telefono):
 
 
 def get_hotel(telefono):
-    """Obtiene el hotel del cliente desde la conversacion o cache."""
     if telefono in conversaciones and conversaciones[telefono]:
         hotel = conversaciones[telefono].get("hotel")
         if hotel:
@@ -654,7 +632,7 @@ def enviar_resumen_diario():
         pendientes = [t for t in tickets if t["estado"] == "Pendiente"]
         en_proceso = [t for t in tickets if t["estado"] == "En proceso"]
 
-        mensaje = f"☀️ *RESUMEN DIARIO - {ahora.strftime('%d/%m/%Y')}*\n\n"
+        mensaje = f"☀️ *RESUMEN DIARIO - {ahora.strftime('%d/%m/%Y %H:%M')}*\n\n"
 
         if not tickets:
             mensaje += "✅ No hay tickets abiertos. Todo al dia!"
@@ -663,7 +641,6 @@ def enviar_resumen_diario():
             mensaje += f"   🟡 Pendientes: {len(pendientes)}\n"
             mensaje += f"   🔵 En proceso: {len(en_proceso)}\n\n"
 
-            # Agrupar por hotel
             hoteles = {}
             for t in tickets:
                 h = t.get("hotel", "Sin especificar")
@@ -683,7 +660,7 @@ def enviar_resumen_diario():
                     )
 
         notificar_admin(mensaje)
-        print(f"Resumen diario enviado: {ahora.strftime('%Y-%m-%d %H:%M')}")
+        print(f"Resumen enviado: {ahora.strftime('%Y-%m-%d %H:%M')}")
     except Exception as e:
         print(f"Error enviando resumen diario: {e}")
         import traceback
@@ -719,12 +696,15 @@ def procesar_comando_admin(texto_original):
         enviar_mensaje(ADMIN_PHONE, MENU_ADMIN)
         return
 
+    if texto_lower == "resumen":
+        enviar_resumen_diario()
+        return
+
     if texto_lower == "t":
         tickets = buscar_tickets_pendientes()
         if not tickets:
             enviar_mensaje(ADMIN_PHONE, "✅ No hay tickets pendientes!")
             return
-        # Agrupar por hotel
         hoteles = {}
         for t in tickets:
             h = t.get("hotel", "Sin especificar")
@@ -746,7 +726,6 @@ def procesar_comando_admin(texto_original):
         enviar_mensaje(ADMIN_PHONE, lista)
         return
 
-    # Comando: H [hotel] - filtrar por hotel
     if texto_lower.startswith("h "):
         hotel_buscar = texto[2:].strip()
         if not hotel_buscar:
@@ -827,7 +806,6 @@ def procesar_comando_admin(texto_original):
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *R24 Tu mensaje aqui*")
         return
 
-    # Comando: P[numero] [prioridad] - cambiar prioridad
     if texto_lower.startswith("p"):
         try:
             resto = texto[1:].strip()
@@ -968,7 +946,6 @@ def recibir_mensaje():
         estado = get_estado(telefono)
         hotel_conocido = get_hotel(telefono)
 
-        # Si no conocemos el hotel, buscar en tickets anteriores
         if not hotel_conocido:
             hotel_conocido = buscar_hotel_cliente(telefono)
             if hotel_conocido:
@@ -977,9 +954,7 @@ def recibir_mensaje():
                 conversaciones[telefono]["hotel"] = hotel_conocido
                 hotel_cache[telefono] = hotel_conocido
 
-        # ============================================
-        # ESTADO: Esperando nombre del hotel (cliente nuevo)
-        # ============================================
+        # Esperando nombre del hotel (cliente nuevo)
         if estado == "esperando_hotel":
             if tipo_mensaje == "text" and texto_original:
                 hotel = texto_original.strip()
@@ -992,11 +967,8 @@ def recibir_mensaje():
                 enviar_mensaje(telefono, "Por favor, escriba el nombre del hotel desde donde nos contacta.")
             return jsonify({"status": "ok"}), 200
 
-        # ============================================
         # Primera vez o conversacion reseteada
-        # ============================================
         if estado is None or estado == "listo":
-            # Si no conocemos el hotel, preguntar primero
             if not hotel_conocido:
                 enviar_mensaje(
                     telefono,
@@ -1008,7 +980,6 @@ def recibir_mensaje():
                 set_estado(telefono, "esperando_hotel")
                 return jsonify({"status": "ok"}), 200
 
-            # Ya conocemos el hotel - deteccion inteligente
             if tipo_mensaje == "text":
                 if es_saludo(texto) and not es_descripcion_problema(texto):
                     if estado is None:
@@ -1048,9 +1019,7 @@ def recibir_mensaje():
                 set_estado(telefono, "menu")
             return jsonify({"status": "ok"}), 200
 
-        # ============================================
         # Menu principal
-        # ============================================
         if estado == "menu":
             if texto == "1":
                 enviar_mensaje(
@@ -1219,7 +1188,6 @@ def recibir_mensaje():
     return jsonify({"status": "ok"}), 200
 
 
-# Programar resumen diario al iniciar
 programar_resumen_diario()
 
 if __name__ == "__main__":
