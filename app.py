@@ -17,7 +17,7 @@ WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "Tickets IT Support")
-DRIVE_FOLDER_NAME = "WhatsApp Screenshots IT Support"
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "14dcgJCSQnjBnS4Glp9Rshu2eC6yoIaTH")
 
 TIEMPO_ESPERA = 10
 
@@ -43,36 +43,14 @@ def conectar_google_sheets():
         return None
 
 
-def obtener_o_crear_carpeta_drive():
+def subir_imagen_a_drive(image_data, filename):
     try:
         creds = get_google_creds()
         service = build("drive", "v3", credentials=creds)
-        query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
-        folders = results.get("files", [])
-        if folders:
-            return service, folders[0]["id"]
-        folder_metadata = {"name": DRIVE_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"}
-        folder = service.files().create(body=folder_metadata, fields="id").execute()
-        folder_id = folder.get("id")
-        permission = {"type": "anyone", "role": "reader"}
-        service.permissions().create(fileId=folder_id, body=permission).execute()
-        print(f"Carpeta '{DRIVE_FOLDER_NAME}' creada en Drive")
-        return service, folder_id
-    except Exception as e:
-        print(f"Error con carpeta Drive: {e}")
-        return None, None
-
-
-def subir_imagen_a_drive(image_data, filename):
-    try:
-        service, folder_id = obtener_o_crear_carpeta_drive()
-        if not service or not folder_id:
-            return None
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
             tmp.write(image_data)
             tmp_path = tmp.name
-        file_metadata = {"name": filename, "parents": [folder_id]}
+        file_metadata = {"name": filename, "parents": [DRIVE_FOLDER_ID]}
         media = MediaFileUpload(tmp_path, mimetype="image/jpeg")
         file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
         file_id = file.get("id")
