@@ -21,7 +21,6 @@ IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY", "")
 TIEMPO_ESPERA = 10
 
 # Estado de cada conversacion
-# {telefono: {"estado": "menu", "ticket_actual": None}}
 conversaciones = {}
 buffer_mensajes = {}
 buffer_lock = threading.Lock()
@@ -114,7 +113,6 @@ def obtener_o_crear_hoja():
 
 
 def buscar_tickets_cliente(telefono):
-    """Busca todos los tickets de un cliente por su numero de telefono."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return []
@@ -123,14 +121,14 @@ def buscar_tickets_cliente(telefono):
         tickets = []
         for i, fila in enumerate(todas_las_filas):
             if i == 0:
-                continue  # saltar encabezado
+                continue
             if len(fila) >= 5 and fila[2] == telefono:
                 tickets.append({
                     "numero": fila[0],
                     "fecha": fila[1],
                     "descripcion": fila[3][:80] + ("..." if len(fila[3]) > 80 else ""),
                     "estado": fila[4],
-                    "fila": i + 1  # fila en Google Sheets (1-indexed)
+                    "fila": i + 1
                 })
         return tickets
     except Exception as e:
@@ -139,7 +137,6 @@ def buscar_tickets_cliente(telefono):
 
 
 def obtener_ticket(numero_ticket):
-    """Obtiene un ticket especifico por su numero."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return None
@@ -165,7 +162,6 @@ def obtener_ticket(numero_ticket):
 
 
 def agregar_info_a_ticket(numero_ticket, nueva_info, nuevas_imagenes=None):
-    """Agrega informacion adicional a un ticket existente."""
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return False
@@ -177,11 +173,9 @@ def agregar_info_a_ticket(numero_ticket, nueva_info, nuevas_imagenes=None):
             if len(fila) >= 5 and fila[0] == str(numero_ticket):
                 fila_num = i + 1
                 ahora = datetime.now().strftime("%Y-%m-%d %H:%M")
-                # Agregar nueva info a la descripcion
                 descripcion_actual = fila[3]
                 descripcion_nueva = f"{descripcion_actual}\n\n--- Actualizacion ({ahora}) ---\n{nueva_info}"
                 sheet.update_cell(fila_num, 4, descripcion_nueva)
-                # Agregar nuevas imagenes si hay
                 if nuevas_imagenes:
                     imagenes_actuales = fila[5] if len(fila) > 5 else ""
                     nuevos_links = "\n".join(nuevas_imagenes)
@@ -241,14 +235,12 @@ def enviar_mensaje(telefono, mensaje):
 
 
 def get_estado(telefono):
-    """Obtiene el estado actual de la conversacion."""
     if telefono not in conversaciones or conversaciones[telefono] is None:
         return None
     return conversaciones[telefono].get("estado")
 
 
 def set_estado(telefono, estado, ticket_actual=None):
-    """Establece el estado de la conversacion."""
     if conversaciones.get(telefono) is None:
         conversaciones[telefono] = {}
     conversaciones[telefono]["estado"] = estado
@@ -256,13 +248,7 @@ def set_estado(telefono, estado, ticket_actual=None):
         conversaciones[telefono]["ticket_actual"] = ticket_actual
 
 
-def reset_conversacion(telefono):
-    """Resetea la conversacion del cliente."""
-    conversaciones[telefono] = None
-
-
 def procesar_nuevo_ticket(telefono):
-    """Procesa los mensajes acumulados y crea un nuevo ticket."""
     with buffer_lock:
         if telefono not in buffer_mensajes:
             return
@@ -280,24 +266,23 @@ def procesar_nuevo_ticket(telefono):
             img_texto = f"\n\n{len(imagenes)} imagen(es) adjunta(s)"
         enviar_mensaje(
             telefono,
-            f"Muchas gracias por contactarnos!\n\nSu ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
+            f"Muchas gracias por contactarnos!\n\n"
+            f"Su ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
             f"Resumen:\n{resumen}{img_texto}\n\n"
             f"Un miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\n"
-            f"Gracias por confiar en *IT Support and Services SAC*!\n\n"
-            f"---\n{MENU_PRINCIPAL}"
+            f"Gracias por confiar en *IT Support and Services SAC*!"
         )
     else:
         enviar_mensaje(
             telefono,
-            f"Hemos recibido su mensaje. Nuestro equipo se pondra en contacto con usted pronto.\n\n"
-            f"Gracias por contactar a *IT Support and Services SAC*!\n\n"
-            f"---\n{MENU_PRINCIPAL}"
+            "Hemos recibido su mensaje. Nuestro equipo se pondra en contacto con usted pronto.\n\n"
+            "Gracias por contactar a *IT Support and Services SAC*!"
         )
-    set_estado(telefono, "menu")
+    # Volver a estado "listo" - el menu aparecera cuando el cliente escriba de nuevo
+    set_estado(telefono, "listo")
 
 
 def procesar_info_adicional(telefono):
-    """Procesa los mensajes acumulados y los agrega a un ticket existente."""
     with buffer_lock:
         if telefono not in buffer_mensajes:
             return
@@ -306,8 +291,8 @@ def procesar_info_adicional(telefono):
         del buffer_mensajes[telefono]
     ticket_actual = conversaciones.get(telefono, {}).get("ticket_actual")
     if not ticket_actual:
-        enviar_mensaje(telefono, "Hubo un error. Volviendo al menu principal.\n\n" + MENU_PRINCIPAL)
-        set_estado(telefono, "menu")
+        enviar_mensaje(telefono, "Hubo un error. Escriba cualquier mensaje para volver al menu principal.")
+        set_estado(telefono, "listo")
         return
     nueva_info = "\n".join(mensajes) if mensajes else "(Solo imagenes adicionales)"
     exito = agregar_info_a_ticket(ticket_actual, nueva_info, imagenes if imagenes else None)
@@ -318,19 +303,17 @@ def procesar_info_adicional(telefono):
         enviar_mensaje(
             telefono,
             f"Informacion agregada exitosamente al ticket *#{ticket_actual}*.{img_texto}\n\n"
-            f"---\n{MENU_PRINCIPAL}"
+            f"Gracias por confiar en *IT Support and Services SAC*!"
         )
     else:
         enviar_mensaje(
             telefono,
-            f"No se pudo agregar la informacion al ticket #{ticket_actual}. Por favor intente de nuevo.\n\n"
-            f"---\n{MENU_PRINCIPAL}"
+            f"No se pudo agregar la informacion al ticket #{ticket_actual}. Por favor intente de nuevo."
         )
-    set_estado(telefono, "menu")
+    set_estado(telefono, "listo")
 
 
 def agregar_al_buffer(telefono, tipo_proceso, texto=None, imagen_link=None):
-    """Agrega mensaje al buffer. tipo_proceso: 'nuevo' o 'info'"""
     with buffer_lock:
         if telefono not in buffer_mensajes:
             buffer_mensajes[telefono] = {"mensajes": [], "imagenes": [], "timer": None, "tipo": tipo_proceso}
@@ -349,7 +332,6 @@ def agregar_al_buffer(telefono, tipo_proceso, texto=None, imagen_link=None):
 
 
 def procesar_imagen(telefono, mensaje, tipo_proceso):
-    """Descarga y sube una imagen, luego la agrega al buffer."""
     image_info = mensaje.get("image", {})
     media_id = image_info.get("id")
     caption = image_info.get("caption", "")
@@ -403,7 +385,6 @@ def recibir_mensaje():
         telefono = mensaje.get("from", "")
         tipo_mensaje = mensaje.get("type", "")
 
-        # Obtener texto del mensaje si es texto
         texto = ""
         if tipo_mensaje == "text":
             texto = mensaje.get("text", {}).get("body", "").strip().lower()
@@ -411,7 +392,7 @@ def recibir_mensaje():
         estado = get_estado(telefono)
 
         # ============================================
-        # ESTADO: Primera vez o conversacion reseteada
+        # ESTADO: Primera vez - saludo inicial
         # ============================================
         if estado is None:
             enviar_mensaje(
@@ -420,6 +401,14 @@ def recibir_mensaje():
                 f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
                 f"{MENU_PRINCIPAL}"
             )
+            set_estado(telefono, "menu")
+            return jsonify({"status": "ok"}), 200
+
+        # ============================================
+        # ESTADO: Listo (ya completo una accion, escribe de nuevo)
+        # ============================================
+        if estado == "listo":
+            enviar_mensaje(telefono, MENU_PRINCIPAL)
             set_estado(telefono, "menu")
             return jsonify({"status": "ok"}), 200
 
@@ -480,7 +469,6 @@ def recibir_mensaje():
         # ============================================
         if estado == "acumulando_nuevo":
             if texto == "menu":
-                # Cancelar buffer pendiente
                 with buffer_lock:
                     if telefono in buffer_mensajes:
                         if buffer_mensajes[telefono]["timer"]:
@@ -506,7 +494,6 @@ def recibir_mensaje():
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
-            # Intentar obtener el ticket
             try:
                 numero_ticket = texto.replace("#", "").strip()
                 ticket = obtener_ticket(numero_ticket)
@@ -531,7 +518,7 @@ def recibir_mensaje():
                 else:
                     enviar_mensaje(
                         telefono,
-                        "No se encontro ese ticket. Por favor escriba un numero de ticket valido.\n\n"
+                        "No se encontro ese ticket o no le pertenece. Por favor escriba un numero de ticket valido.\n\n"
                         "_(Escriba *menu* para volver al menu principal)_"
                     )
             except Exception:
@@ -602,7 +589,7 @@ def recibir_mensaje():
             return jsonify({"status": "ok"}), 200
 
         # Estado desconocido - resetear
-        enviar_mensaje(telefono, "Hubo un error. Volviendo al menu principal.\n\n" + MENU_PRINCIPAL)
+        enviar_mensaje(telefono, MENU_PRINCIPAL)
         set_estado(telefono, "menu")
 
     except Exception as e:
