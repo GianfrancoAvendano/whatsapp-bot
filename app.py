@@ -2,10 +2,13 @@
 WhatsApp Chatbot para IT Support and Services SAC
 ==================================================
 Bot que saluda, registra tickets de soporte y los guarda en Google Sheets.
+Acumula mensajes múltiples en un solo ticket.
 """
 
 import os
 import json
+import time
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
 import requests
@@ -23,8 +26,15 @@ PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "Tickets IT Support")
 
-# Diccionario para rastrear en qué paso está cada conversación
+# Tiempo de espera (segundos) para acumular mensajes antes de crear el ticket
+TIEMPO_ESPERA = 10
+
+# Estado de conversaciones
 conversaciones = {}
+
+# Buffer de mensajes: {telefono: {"mensajes": [...], "timer": Timer}}
+buffer_mensajes = {}
+buffer_lock = threading.Lock()
 
 
 def conectar_google_sheets():
@@ -111,6 +121,44 @@ def enviar_mensaje(telefono, mensaje):
             print(f"   Respuesta: {e.response.text}")
 
 
+def procesar_ticket(telefono):
+    """
+    Se ejecuta después de TIEMPO_ESPERA segundos.
+    Junta todos los mensajes acumulados y crea un solo ticket.
+    """
+    with buffer_lock:
+        if telefono not in buffer_mensajes:
+            return
+        mensajes = buffer_mensajes[telefono]["mensajes"]
+        del buffer_mensajes[telefono]
+
+    descripcion_completa = "\n".join(mensajes)
+    numero_ticket = guardar_ticket(telefono, descripcion_completa)
+
+    if numero_ticket > 0:
+        resumen = descripcion_completa[:200]
+        if len(descripcion_completa) > 200:
+            resumen += "..."
+
+        enviar_mensaje(
+            telefono,
+            f"✅ ¡Muchas gracias por contactarnos!\n\n"
+            f"Su ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
+            f"📋 *Resumen:*\n{resumen}\n\n"
+            f"Un miembro de nuestro equipo se pondrá en contacto con usted "
+            f"a la brevedad posible.\n\n"
+            f"¡Gracias por confiar en *IT Support and Services SAC*! 🙏"
+        )
+    else:
+        enviar_mensaje(
+            telefono,
+            "Hemos recibido su mensaje. Nuestro equipo se pondrá en contacto "
+            "con usted pronto.\n\n¡Gracias por contactar a *IT Support and Services SAC*! 🙏"
+        )
+
+    conversaciones[telefono] = None
+
+
 # ============================================================
 # RUTAS DE LA APLICACIÓN
 # ============================================================
@@ -118,6 +166,8 @@ def enviar_mensaje(telefono, mensaje):
 @app.route("/", methods=["GET"])
 def home():
     return "🤖 Bot de IT Support and Services SAC está activo!", 200
+
+
 @app.route("/privacy", methods=["GET"])
 def privacy():
     return """
@@ -131,6 +181,7 @@ def privacy():
     <p>Contacto: IT Support and Services SAC</p>
     </body></html>
     """, 200
+
 
 @app.route("/webhook", methods=["GET"])
 def verificar_webhook():
@@ -159,68 +210,4 @@ def recibir_mensaje():
         messages = value.get("messages", [])
 
         if not messages:
-            return jsonify({"status": "ok"}), 200
-
-        mensaje = messages[0]
-        telefono = mensaje.get("from", "")
-        tipo_mensaje = mensaje.get("type", "")
-
-        if tipo_mensaje != "text":
-            enviar_mensaje(
-                telefono,
-                "¡Hola! 👋 Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                "Por el momento solo podemos recibir mensajes de texto. "
-                "Por favor, escríbenos tu consulta. 😊"
-            )
-            return jsonify({"status": "ok"}), 200
-
-        texto = mensaje.get("text", {}).get("body", "").strip()
-
-        # ========================================
-        # FLUJO DE CONVERSACIÓN
-        # ========================================
-
-        if telefono not in conversaciones or conversaciones[telefono] is None:
-            conversaciones[telefono] = "esperando_problema"
-
-            enviar_mensaje(
-                telefono,
-                "¡Hola! 👋 Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                "Somos su aliado en soporte técnico y servicios de TI.\n\n"
-                "Por favor, descríbanos el problema o consulta que tiene "
-                "y con gusto le ayudaremos. 💻🔧"
-            )
-
-        elif conversaciones[telefono] == "esperando_problema":
-            numero_ticket = guardar_ticket(telefono, texto)
-
-            if numero_ticket > 0:
-                enviar_mensaje(
-                    telefono,
-                    f"✅ ¡Muchas gracias por contactarnos!\n\n"
-                    f"Su ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
-                    f"📋 *Resumen:*\n{texto[:200]}{'...' if len(texto) > 200 else ''}\n\n"
-                    f"Un miembro de nuestro equipo se pondrá en contacto con usted "
-                    f"a la brevedad posible.\n\n"
-                    f"¡Gracias por confiar en *IT Support and Services SAC*! 🙏"
-                )
-            else:
-                enviar_mensaje(
-                    telefono,
-                    "Hemos recibido su mensaje. Nuestro equipo se pondrá en contacto "
-                    "con usted pronto.\n\n¡Gracias por contactar a *IT Support and Services SAC*! 🙏"
-                )
-
-            conversaciones[telefono] = None
-
-    except Exception as e:
-        print(f"❌ Error procesando mensaje: {e}")
-        import traceback
-        traceback.print_exc()
-
-    return jsonify({"status": "ok"}), 200
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+            return jsonify({"status": "ok"})
