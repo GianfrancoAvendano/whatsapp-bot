@@ -68,6 +68,7 @@ def subir_imagen_a_drive(image_data, filename):
             headers=headers,
             data=body
         )
+        print(f"Respuesta de Drive: {resp.status_code} - {resp.text}")
         resp.raise_for_status()
         file_id = resp.json().get("id")
         perm_headers = {
