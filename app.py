@@ -4,11 +4,9 @@ import threading
 import tempfile
 from datetime import datetime
 from flask import Flask, request, jsonify
-import requests
+import requests as http_requests
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 app = Flask(__name__)
 
@@ -46,22 +44,47 @@ def conectar_google_sheets():
 def subir_imagen_a_drive(image_data, filename):
     try:
         creds = get_google_creds()
-        service = build("drive", "v3", credentials=creds)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            tmp.write(image_data)
-            tmp_path = tmp.name
-        file_metadata = {"name": filename, "parents": [DRIVE_FOLDER_ID]}
-        media = MediaFileUpload(tmp_path, mimetype="image/jpeg")
-        file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-        file_id = file.get("id")
-        permission = {"type": "anyone", "role": "reader"}
-        service.permissions().create(fileId=file_id, body=permission).execute()
-        os.unlink(tmp_path)
+        creds.refresh(http_requests.Request() if hasattr(http_requests, 'Request') else None)
+        if not creds.valid:
+            from google.auth.transport.requests import Request as AuthRequest
+            creds.refresh(AuthRequest())
+        token = creds.token
+        metadata = json.dumps({"name": filename, "parents": [DRIVE_FOLDER_ID]})
+        boundary = "foo_bar_baz"
+        body = (
+            f"--{boundary}\r\n"
+            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{metadata}\r\n"
+            f"--{boundary}\r\n"
+            f"Content-Type: image/jpeg\r\n\r\n"
+        ).encode("utf-8") + image_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/related; boundary={boundary}",
+        }
+        resp = http_requests.post(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+            headers=headers,
+            data=body
+        )
+        resp.raise_for_status()
+        file_id = resp.json().get("id")
+        perm_headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        http_requests.post(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}/permissions?supportsAllDrives=true",
+            headers=perm_headers,
+            json={"type": "anyone", "role": "reader"}
+        )
         link = f"https://drive.google.com/file/d/{file_id}/view"
         print(f"Imagen subida a Drive: {link}")
         return link
     except Exception as e:
         print(f"Error subiendo imagen a Drive: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -69,12 +92,12 @@ def descargar_media_whatsapp(media_id):
     try:
         url = f"https://graph.facebook.com/v22.0/{media_id}"
         headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
-        response = requests.get(url, headers=headers)
+        response = http_requests.get(url, headers=headers)
         response.raise_for_status()
         media_url = response.json().get("url")
         if not media_url:
             return None
-        media_response = requests.get(media_url, headers=headers)
+        media_response = http_requests.get(media_url, headers=headers)
         media_response.raise_for_status()
         return media_response.content
     except Exception as e:
@@ -133,10 +156,10 @@ def enviar_mensaje(telefono, mensaje):
         "text": {"body": mensaje},
     }
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = http_requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         print(f"Mensaje enviado a {telefono}")
-    except requests.exceptions.RequestException as e:
+    except http_requests.exceptions.RequestException as e:
         print(f"Error enviando mensaje a {telefono}: {e}")
         if hasattr(e, "response") and e.response is not None:
             print(f"Respuesta: {e.response.text}")
