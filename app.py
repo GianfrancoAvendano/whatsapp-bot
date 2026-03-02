@@ -1,6 +1,7 @@
 import os
 import json
 import threading
+import base64
 from datetime import datetime
 from flask import Flask, request, jsonify
 import requests as http_requests
@@ -15,7 +16,7 @@ WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "Tickets IT Support")
-DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "14dcgJCSQnjBnS4Glp9Rshu2eC6yoIaTH")
+IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY", "")
 
 TIEMPO_ESPERA = 10
 
@@ -31,12 +32,6 @@ def get_google_creds():
     return creds
 
 
-def get_access_token():
-    creds = get_google_creds()
-    creds.refresh(GoogleAuthRequest())
-    return creds.token
-
-
 def conectar_google_sheets():
     try:
         creds = get_google_creds()
@@ -47,44 +42,28 @@ def conectar_google_sheets():
         return None
 
 
-def subir_imagen_a_drive(image_data, filename):
+def subir_imagen_a_imgbb(image_data, filename):
     try:
-        token = get_access_token()
-        metadata = json.dumps({"name": filename, "parents": [DRIVE_FOLDER_ID]})
-        boundary = "foo_bar_baz"
-        body = (
-            f"--{boundary}\r\n"
-            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-            f"{metadata}\r\n"
-            f"--{boundary}\r\n"
-            f"Content-Type: image/jpeg\r\n\r\n"
-        ).encode("utf-8") + image_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": f"multipart/related; boundary={boundary}",
+        image_base64 = base64.b64encode(image_data).decode("utf-8")
+        url = "https://api.imgbb.com/1/upload"
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": image_base64,
+            "name": filename,
         }
-        resp = http_requests.post(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
-            headers=headers,
-            data=body
-        )
-        print(f"Respuesta de Drive: {resp.status_code} - {resp.text}")
+        resp = http_requests.post(url, data=payload)
+        print(f"Respuesta de imgbb: {resp.status_code}")
         resp.raise_for_status()
-        file_id = resp.json().get("id")
-        perm_headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        http_requests.post(
-            f"https://www.googleapis.com/drive/v3/files/{file_id}/permissions?supportsAllDrives=true",
-            headers=perm_headers,
-            json={"type": "anyone", "role": "reader"}
-        )
-        link = f"https://drive.google.com/file/d/{file_id}/view"
-        print(f"Imagen subida a Drive: {link}")
-        return link
+        result = resp.json()
+        if result.get("success"):
+            link = result["data"]["url"]
+            print(f"Imagen subida a imgbb: {link}")
+            return link
+        else:
+            print(f"Error en imgbb: {result}")
+            return None
     except Exception as e:
-        print(f"Error subiendo imagen a Drive: {e}")
+        print(f"Error subiendo imagen a imgbb: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -261,8 +240,8 @@ def recibir_mensaje():
                     image_data = descargar_media_whatsapp(media_id)
                     if image_data:
                         ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        filename = f"ticket_{telefono}_{ahora}.jpg"
-                        link = subir_imagen_a_drive(image_data, filename)
+                        filename = f"ticket_{telefono}_{ahora}"
+                        link = subir_imagen_a_imgbb(image_data, filename)
                         if link:
                             agregar_al_buffer(telefono, texto=caption if caption else None, imagen_link=link)
                         else:
