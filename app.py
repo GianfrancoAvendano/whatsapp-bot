@@ -1,11 +1,14 @@
 import os
 import json
 import threading
+import tempfile
 from datetime import datetime
 from flask import Flask, request, jsonify
 import requests
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 app = Flask(__name__)
 
@@ -14,6 +17,7 @@ WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "Tickets IT Support")
+DRIVE_FOLDER_NAME = "WhatsApp Screenshots IT Support"
 
 TIEMPO_ESPERA = 10
 
@@ -22,15 +26,81 @@ buffer_mensajes = {}
 buffer_lock = threading.Lock()
 
 
+def get_google_creds():
+    creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return creds
+
+
 def conectar_google_sheets():
     try:
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        creds = get_google_creds()
         client = gspread.authorize(creds)
         return client
     except Exception as e:
         print(f"Error conectando a Google Sheets: {e}")
+        return None
+
+
+def obtener_o_crear_carpeta_drive():
+    try:
+        creds = get_google_creds()
+        service = build("drive", "v3", credentials=creds)
+        query = f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
+        folders = results.get("files", [])
+        if folders:
+            return service, folders[0]["id"]
+        folder_metadata = {"name": DRIVE_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"}
+        folder = service.files().create(body=folder_metadata, fields="id").execute()
+        folder_id = folder.get("id")
+        permission = {"type": "anyone", "role": "reader"}
+        service.permissions().create(fileId=folder_id, body=permission).execute()
+        print(f"Carpeta '{DRIVE_FOLDER_NAME}' creada en Drive")
+        return service, folder_id
+    except Exception as e:
+        print(f"Error con carpeta Drive: {e}")
+        return None, None
+
+
+def subir_imagen_a_drive(image_data, filename):
+    try:
+        service, folder_id = obtener_o_crear_carpeta_drive()
+        if not service or not folder_id:
+            return None
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(image_data)
+            tmp_path = tmp.name
+        file_metadata = {"name": filename, "parents": [folder_id]}
+        media = MediaFileUpload(tmp_path, mimetype="image/jpeg")
+        file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+        file_id = file.get("id")
+        permission = {"type": "anyone", "role": "reader"}
+        service.permissions().create(fileId=file_id, body=permission).execute()
+        os.unlink(tmp_path)
+        link = f"https://drive.google.com/file/d/{file_id}/view"
+        print(f"Imagen subida a Drive: {link}")
+        return link
+    except Exception as e:
+        print(f"Error subiendo imagen a Drive: {e}")
+        return None
+
+
+def descargar_media_whatsapp(media_id):
+    try:
+        url = f"https://graph.facebook.com/v22.0/{media_id}"
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        media_url = response.json().get("url")
+        if not media_url:
+            return None
+        media_response = requests.get(media_url, headers=headers)
+        media_response.raise_for_status()
+        return media_response.content
+    except Exception as e:
+        print(f"Error descargando media: {e}")
         return None
 
 
@@ -45,14 +115,14 @@ def obtener_o_crear_hoja():
         try:
             spreadsheet = client.create(GOOGLE_SHEET_NAME)
             sheet = spreadsheet.sheet1
-            sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Descripcion del Problema", "Estado"])
+            sheet.append_row(["#", "Fecha y Hora", "Telefono del Cliente", "Descripcion del Problema", "Estado", "Imagenes"])
             return sheet
         except Exception as e:
             print(f"Error creando la hoja: {e}")
             return None
 
 
-def guardar_ticket(telefono, descripcion):
+def guardar_ticket(telefono, descripcion, imagenes=None):
     sheet = obtener_o_crear_hoja()
     if not sheet:
         return 0
@@ -60,7 +130,10 @@ def guardar_ticket(telefono, descripcion):
         todas_las_filas = sheet.get_all_values()
         numero_ticket = len(todas_las_filas)
         ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        nueva_fila = [numero_ticket, ahora, telefono, descripcion, "Pendiente"]
+        links_imagenes = ""
+        if imagenes:
+            links_imagenes = "\n".join(imagenes)
+        nueva_fila = [numero_ticket, ahora, telefono, descripcion, "Pendiente", links_imagenes]
         sheet.append_row(nueva_fila)
         print(f"Ticket #{numero_ticket} guardado: {telefono}")
         return numero_ticket
@@ -96,16 +169,20 @@ def procesar_ticket(telefono):
         if telefono not in buffer_mensajes:
             return
         mensajes = buffer_mensajes[telefono]["mensajes"]
+        imagenes = buffer_mensajes[telefono].get("imagenes", [])
         del buffer_mensajes[telefono]
-    descripcion_completa = "\n".join(mensajes)
-    numero_ticket = guardar_ticket(telefono, descripcion_completa)
+    descripcion_completa = "\n".join(mensajes) if mensajes else "(Solo imagenes)"
+    numero_ticket = guardar_ticket(telefono, descripcion_completa, imagenes if imagenes else None)
     if numero_ticket > 0:
         resumen = descripcion_completa[:200]
         if len(descripcion_completa) > 200:
             resumen += "..."
+        img_texto = ""
+        if imagenes:
+            img_texto = f"\n\n{len(imagenes)} imagen(es) adjunta(s)"
         enviar_mensaje(
             telefono,
-            f"Muchas gracias por contactarnos!\n\nSu ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\nResumen:\n{resumen}\n\nUn miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\nGracias por confiar en *IT Support and Services SAC*!"
+            f"Muchas gracias por contactarnos!\n\nSu ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\nResumen:\n{resumen}{img_texto}\n\nUn miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\nGracias por confiar en *IT Support and Services SAC*!"
         )
     else:
         enviar_mensaje(
@@ -113,6 +190,20 @@ def procesar_ticket(telefono):
             "Hemos recibido su mensaje. Nuestro equipo se pondra en contacto con usted pronto.\n\nGracias por contactar a *IT Support and Services SAC*!"
         )
     conversaciones[telefono] = None
+
+
+def agregar_al_buffer(telefono, texto=None, imagen_link=None):
+    with buffer_lock:
+        if telefono not in buffer_mensajes:
+            buffer_mensajes[telefono] = {"mensajes": [], "imagenes": [], "timer": None}
+        if buffer_mensajes[telefono]["timer"]:
+            buffer_mensajes[telefono]["timer"].cancel()
+        if texto:
+            buffer_mensajes[telefono]["mensajes"].append(texto)
+        if imagen_link:
+            buffer_mensajes[telefono]["imagenes"].append(imagen_link)
+        buffer_mensajes[telefono]["timer"] = threading.Timer(TIEMPO_ESPERA, procesar_ticket, args=[telefono])
+        buffer_mensajes[telefono]["timer"].start()
 
 
 @app.route("/", methods=["GET"])
@@ -150,25 +241,33 @@ def recibir_mensaje():
         mensaje = messages[0]
         telefono = mensaje.get("from", "")
         tipo_mensaje = mensaje.get("type", "")
-        if tipo_mensaje != "text":
-            enviar_mensaje(telefono, "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\nPor el momento solo podemos recibir mensajes de texto. Por favor, escribenos tu consulta.")
-            return jsonify({"status": "ok"}), 200
-        texto = mensaje.get("text", {}).get("body", "").strip()
         if telefono not in conversaciones or conversaciones[telefono] is None:
             conversaciones[telefono] = "esperando_problema"
-            enviar_mensaje(telefono, "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\nSomos su aliado en soporte tecnico y servicios de TI.\n\nPor favor, describanos el problema o consulta que tiene y con gusto le ayudaremos.")
-        elif conversaciones[telefono] == "esperando_problema":
+            enviar_mensaje(telefono, "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\nSomos su aliado en soporte tecnico y servicios de TI.\n\nPor favor, describanos el problema o consulta que tiene y con gusto le ayudaremos.\n\nPuede enviar texto y/o imagenes/screenshots.")
+            return jsonify({"status": "ok"}), 200
+        if conversaciones[telefono] in ["esperando_problema", "acumulando_mensajes"]:
             conversaciones[telefono] = "acumulando_mensajes"
-            with buffer_lock:
-                buffer_mensajes[telefono] = {"mensajes": [texto], "timer": threading.Timer(TIEMPO_ESPERA, procesar_ticket, args=[telefono])}
-                buffer_mensajes[telefono]["timer"].start()
-        elif conversaciones[telefono] == "acumulando_mensajes":
-            with buffer_lock:
-                if telefono in buffer_mensajes:
-                    buffer_mensajes[telefono]["timer"].cancel()
-                    buffer_mensajes[telefono]["mensajes"].append(texto)
-                    buffer_mensajes[telefono]["timer"] = threading.Timer(TIEMPO_ESPERA, procesar_ticket, args=[telefono])
-                    buffer_mensajes[telefono]["timer"].start()
+            if tipo_mensaje == "text":
+                texto = mensaje.get("text", {}).get("body", "").strip()
+                agregar_al_buffer(telefono, texto=texto)
+            elif tipo_mensaje == "image":
+                image_info = mensaje.get("image", {})
+                media_id = image_info.get("id")
+                caption = image_info.get("caption", "")
+                if media_id:
+                    image_data = descargar_media_whatsapp(media_id)
+                    if image_data:
+                        ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"ticket_{telefono}_{ahora}.jpg"
+                        link = subir_imagen_a_drive(image_data, filename)
+                        if link:
+                            agregar_al_buffer(telefono, texto=caption if caption else None, imagen_link=link)
+                        else:
+                            agregar_al_buffer(telefono, texto=caption if caption else "(Imagen - error al subir)")
+                    else:
+                        agregar_al_buffer(telefono, texto="(Imagen - error al descargar)")
+            else:
+                enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes. Por favor, describanos su problema.")
     except Exception as e:
         print(f"Error procesando mensaje: {e}")
         import traceback
