@@ -36,30 +36,37 @@ SALUDOS = [
 ]
 
 MENU_PRINCIPAL = (
-    "Como podemos ayudarle?\n\n"
-    "*1* - Reportar un problema nuevo\n"
-    "*2* - Consultar un ticket existente\n\n"
+    "📋 *¿Como podemos ayudarle?*\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "  *1* 🛠️ Reportar un problema nuevo\n"
+    "  *2* 🔍 Consultar un ticket existente\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
     "Responda con *1* o *2*"
 )
 
 MENU_ADMIN = (
-    "Panel de Administrador de *IT Support and Services SAC*\n\n"
-    "Comandos disponibles:\n\n"
-    "*R[#] [mensaje]* - Responder a un cliente\n"
-    "   Ej: R24 Ya estamos revisando su caso\n\n"
-    "*E[#] [estado]* - Cambiar estado de ticket\n"
-    "   Ej: E24 En proceso\n"
-    "   Estados: Pendiente, En proceso, Resuelto\n\n"
-    "*P[#] [prioridad]* - Asignar prioridad\n"
-    "   Ej: P24 Alta\n"
-    "   Prioridades: Alta, Media, Baja\n\n"
-    "*V[#]* - Ver detalles de un ticket\n"
-    "   Ej: V24\n\n"
-    "*T* - Ver todos los tickets pendientes\n\n"
-    "*H [hotel]* - Filtrar tickets por hotel\n"
-    "   Ej: H Hilton\n\n"
-    "*resumen* - Ver resumen de tickets ahora\n\n"
-    "*ayuda* - Ver este menu de nuevo"
+    "⚙️ *PANEL DE ADMINISTRADOR*\n"
+    "*IT Support and Services SAC*\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📨 *RESPONDER*\n"
+    "  *R[#] [mensaje]*\n"
+    "  _Ej: R24 Ya estamos revisando su caso_\n\n"
+    "📊 *CAMBIAR ESTADO*\n"
+    "  *E[#] [estado]*\n"
+    "  _Ej: E24 En proceso_\n"
+    "  _Estados: Pendiente · En proceso · Resuelto_\n\n"
+    "🎯 *ASIGNAR PRIORIDAD*\n"
+    "  *P[#] [prioridad]*\n"
+    "  _Ej: P24 Alta_\n"
+    "  _Prioridades: Alta · Media · Baja_\n\n"
+    "🔎 *VER TICKET*\n"
+    "  *V[#]* — _Ej: V24_\n\n"
+    "📋 *LISTADOS*\n"
+    "  *T* — Ver tickets pendientes\n"
+    "  *H [hotel]* — Filtrar por hotel\n"
+    "  *resumen* — Resumen completo\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "Escriba *ayuda* para ver este menu"
 )
 
 
@@ -456,6 +463,16 @@ def formatear_telefono(telefono):
     return f"+{telefono}"
 
 
+def estado_emoji(estado):
+    if estado == "Pendiente":
+        return "🟡"
+    elif estado == "En proceso":
+        return "🔵"
+    elif estado == "Resuelto":
+        return "🟢"
+    return "⚪"
+
+
 def prioridad_emoji(prioridad):
     if prioridad == "Alta":
         return "🔴"
@@ -507,37 +524,44 @@ def procesar_nuevo_ticket(telefono):
             resumen += "..."
         img_texto = ""
         if imagenes:
-            img_texto = f"\n\n{len(imagenes)} imagen(es) adjunta(s)"
+            img_texto = f"\n📎 _{len(imagenes)} imagen(es) adjunta(s)_"
+
+        # ── Mensaje al cliente ──
         enviar_mensaje(
             telefono,
-            f"Muchas gracias por contactarnos!\n\n"
-            f"Su ticket *#{numero_ticket}* ha sido registrado exitosamente.\n\n"
-            f"🏨 Hotel: *{hotel}*\n"
-            f"Resumen:\n{resumen}{img_texto}\n\n"
+            f"✅ *Ticket #{numero_ticket} registrado*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🏨 *Hotel:* {hotel}\n"
+            f"📝 *Resumen:*\n{resumen}{img_texto}\n\n"
             f"Un miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\n"
-            f"Gracias por confiar en *IT Support and Services SAC*!"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Gracias por confiar en *IT Support and Services SAC* 🤝"
         )
+
+        # ── Notificacion al admin ──
         img_admin = ""
         if imagenes:
-            img_admin = f"\n📎 {len(imagenes)} imagen(es):\n" + "\n".join(imagenes)
+            img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes)
         pendientes = buscar_tickets_pendientes()
         notificar_admin(
-            f"🆕 *NUEVO TICKET #{numero_ticket}*\n\n"
-            f"🏨 Hotel: *{hotel}*\n"
-            f"📞 Cliente: {formatear_telefono(telefono)}\n"
-            f"🕐 {hora_peru().strftime('%Y-%m-%d %H:%M')}\n\n"
-            f"📝 {resumen}{img_admin}\n\n"
-            f"📊 Tickets pendientes: *{len(pendientes)}*\n\n"
-            f"---\n"
-            f"Responder: *R{numero_ticket} [mensaje]*\n"
-            f"Estado: *E{numero_ticket} En proceso*\n"
-            f"Prioridad: *P{numero_ticket} Alta/Media/Baja*"
+            f"🆕 *NUEVO TICKET #{numero_ticket}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🏨 {hotel}\n"
+            f"📞 {formatear_telefono(telefono)}\n"
+            f"🕐 {hora_peru().strftime('%d/%m/%Y %H:%M')}\n\n"
+            f"📝 *Descripcion:*\n{resumen}{img_admin}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Total pendientes: *{len(pendientes)}*\n\n"
+            f"⚡ *Acciones rapidas:*\n"
+            f"  *R{numero_ticket}* [mensaje] → Responder\n"
+            f"  *E{numero_ticket}* En proceso → Estado\n"
+            f"  *P{numero_ticket}* Alta → Prioridad"
         )
     else:
         enviar_mensaje(
             telefono,
-            "Hemos recibido su mensaje. Nuestro equipo se pondra en contacto con usted pronto.\n\n"
-            "Gracias por contactar a *IT Support and Services SAC*!"
+            "⚠️ Hemos recibido su mensaje. Nuestro equipo se pondra en contacto con usted pronto.\n\n"
+            "Gracias por contactar a *IT Support and Services SAC* 🤝"
         )
     set_estado(telefono, "listo")
 
@@ -551,7 +575,7 @@ def procesar_info_adicional(telefono):
         del buffer_mensajes[telefono]
     ticket_actual = conversaciones.get(telefono, {}).get("ticket_actual")
     if not ticket_actual:
-        enviar_mensaje(telefono, "Hubo un error. Escriba cualquier mensaje para volver al menu principal.")
+        enviar_mensaje(telefono, "⚠️ Hubo un error. Escriba cualquier mensaje para volver al menu principal.")
         set_estado(telefono, "listo")
         return
     nueva_info = "\n".join(mensajes) if mensajes else "(Solo imagenes adicionales)"
@@ -559,28 +583,36 @@ def procesar_info_adicional(telefono):
     if exito:
         img_texto = ""
         if imagenes:
-            img_texto = f"\n{len(imagenes)} imagen(es) adjunta(s)"
+            img_texto = f"\n📎 _{len(imagenes)} imagen(es) adjunta(s)_"
+
+        # ── Mensaje al cliente ──
         enviar_mensaje(
             telefono,
-            f"Informacion agregada exitosamente al ticket *#{ticket_actual}*.{img_texto}\n\n"
-            f"Gracias por confiar en *IT Support and Services SAC*!"
+            f"✅ *Ticket #{ticket_actual} actualizado*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Su informacion fue agregada exitosamente.{img_texto}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Gracias por confiar en *IT Support and Services SAC* 🤝"
         )
+
+        # ── Notificacion al admin ──
         img_admin = ""
         if imagenes:
-            img_admin = f"\n📎 {len(imagenes)} imagen(es):\n" + "\n".join(imagenes)
+            img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes)
         hotel = get_hotel(telefono) or "Sin especificar"
         notificar_admin(
-            f"📎 *ACTUALIZACION TICKET #{ticket_actual}*\n\n"
-            f"🏨 Hotel: *{hotel}*\n"
-            f"📞 Cliente: {formatear_telefono(telefono)}\n\n"
-            f"📝 {nueva_info[:200]}{img_admin}\n\n"
-            f"---\n"
-            f"Responder: *R{ticket_actual} [tu mensaje]*"
+            f"📎 *ACTUALIZACION — Ticket #{ticket_actual}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🏨 {hotel}\n"
+            f"📞 {formatear_telefono(telefono)}\n\n"
+            f"📝 *Info nueva:*\n{nueva_info[:200]}{img_admin}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ Responder: *R{ticket_actual}* [mensaje]"
         )
     else:
         enviar_mensaje(
             telefono,
-            f"No se pudo agregar la informacion al ticket #{ticket_actual}. Por favor intente de nuevo."
+            f"❌ No se pudo agregar la informacion al ticket #{ticket_actual}. Por favor intente de nuevo."
         )
     set_estado(telefono, "listo")
 
@@ -632,14 +664,21 @@ def enviar_resumen_diario():
         pendientes = [t for t in tickets if t["estado"] == "Pendiente"]
         en_proceso = [t for t in tickets if t["estado"] == "En proceso"]
 
-        mensaje = f"☀️ *RESUMEN DIARIO - {ahora.strftime('%d/%m/%Y %H:%M')}*\n\n"
+        mensaje = (
+            f"📊 *RESUMEN DE TICKETS*\n"
+            f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        )
 
         if not tickets:
-            mensaje += "✅ No hay tickets abiertos. Todo al dia!"
+            mensaje += "✅ *No hay tickets abiertos.*\n¡Todo al dia!"
         else:
-            mensaje += f"📊 *{len(tickets)} ticket(s) abierto(s)*\n"
-            mensaje += f"   🟡 Pendientes: {len(pendientes)}\n"
-            mensaje += f"   🔵 En proceso: {len(en_proceso)}\n\n"
+            mensaje += (
+                f"📋 *{len(tickets)} ticket(s) abierto(s)*\n\n"
+                f"  🟡 Pendientes: *{len(pendientes)}*\n"
+                f"  🔵 En proceso: *{len(en_proceso)}*\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            )
 
             hoteles = {}
             for t in tickets:
@@ -649,14 +688,15 @@ def enviar_resumen_diario():
                 hoteles[h].append(t)
 
             for hotel, tks in hoteles.items():
-                mensaje += f"🏨 *{hotel}* ({len(tks)} tickets):\n"
+                mensaje += f"🏨 *{hotel}* — {len(tks)} ticket(s)\n"
+                mensaje += f"─────────────────────\n"
                 for t in tks:
-                    estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+                    e_emoji = estado_emoji(t["estado"])
                     p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
                     mensaje += (
-                        f"   {estado_emoji}{p_emoji} Ticket #{t['numero']} - {t['estado']}\n"
-                        f"      📞 {formatear_telefono(t['telefono'])}\n"
-                        f"      📝 {t['descripcion']}\n\n"
+                        f"  {e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']}\n"
+                        f"     📞 {formatear_telefono(t['telefono'])}\n"
+                        f"     📝 {t['descripcion']}\n\n"
                     )
 
         notificar_admin(mensaje)
@@ -703,7 +743,7 @@ def procesar_comando_admin(texto_original):
     if texto_lower == "t":
         tickets = buscar_tickets_pendientes()
         if not tickets:
-            enviar_mensaje(ADMIN_PHONE, "✅ No hay tickets pendientes!")
+            enviar_mensaje(ADMIN_PHONE, "✅ *No hay tickets pendientes.* ¡Todo al dia!")
             return
         hoteles = {}
         for t in tickets:
@@ -711,17 +751,21 @@ def procesar_comando_admin(texto_original):
             if h not in hoteles:
                 hoteles[h] = []
             hoteles[h].append(t)
-        lista = f"📋 *Tickets abiertos ({len(tickets)}):*\n\n"
+        lista = (
+            f"📋 *TICKETS ABIERTOS ({len(tickets)})*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        )
         for hotel, tks in hoteles.items():
             lista += f"🏨 *{hotel}*\n"
+            lista += f"─────────────────────\n"
             for t in tks:
-                estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+                e_emoji = estado_emoji(t["estado"])
                 p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
                 lista += (
-                    f"   {estado_emoji}{p_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
-                    f"      📞 {formatear_telefono(t['telefono'])}\n"
-                    f"      🕐 {t['fecha']}\n"
-                    f"      📝 {t['descripcion']}\n\n"
+                    f"  {e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']}\n"
+                    f"     📞 {formatear_telefono(t['telefono'])}\n"
+                    f"     🕐 {t['fecha']}\n"
+                    f"     📝 {t['descripcion']}\n\n"
                 )
         enviar_mensaje(ADMIN_PHONE, lista)
         return
@@ -733,18 +777,21 @@ def procesar_comando_admin(texto_original):
             return
         tickets = buscar_tickets_por_hotel(hotel_buscar)
         if not tickets:
-            enviar_mensaje(ADMIN_PHONE, f"✅ No hay tickets pendientes para hotel que contenga: *{hotel_buscar}*")
+            enviar_mensaje(ADMIN_PHONE, f"✅ *No hay tickets pendientes* para: _{hotel_buscar}_")
             return
-        lista = f"🏨 *Tickets de '{hotel_buscar}' ({len(tickets)}):*\n\n"
+        lista = (
+            f"🏨 *TICKETS — {hotel_buscar.upper()}* ({len(tickets)})\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        )
         for t in tickets:
-            estado_emoji = "🟡" if t["estado"] == "Pendiente" else "🔵"
+            e_emoji = estado_emoji(t["estado"])
             p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
             lista += (
-                f"{estado_emoji}{p_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
-                f"   🏨 {t['hotel']}\n"
-                f"   📞 {formatear_telefono(t['telefono'])}\n"
-                f"   🕐 {t['fecha']}\n"
-                f"   📝 {t['descripcion']}\n\n"
+                f"{e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']}\n"
+                f"  🏨 {t['hotel']}\n"
+                f"  📞 {formatear_telefono(t['telefono'])}\n"
+                f"  🕐 {t['fecha']}\n"
+                f"  📝 {t['descripcion']}\n\n"
             )
         enviar_mensaje(ADMIN_PHONE, lista)
         return
@@ -754,28 +801,31 @@ def procesar_comando_admin(texto_original):
             numero = texto[1:].strip()
             ticket = obtener_ticket(numero)
             if ticket:
-                estado_emoji = "🟡" if ticket["estado"] == "Pendiente" else ("🔵" if ticket["estado"] == "En proceso" else "🟢")
+                e_emoji = estado_emoji(ticket["estado"])
                 p_emoji = prioridad_emoji(ticket.get("prioridad", "Sin asignar"))
                 detalle = (
-                    f"{estado_emoji} *Ticket #{ticket['numero']}*\n\n"
-                    f"🏨 Hotel: *{ticket.get('hotel', 'Sin especificar')}*\n"
-                    f"📞 Cliente: {formatear_telefono(ticket['telefono'])}\n"
-                    f"🕐 Fecha: {ticket['fecha']}\n"
-                    f"📊 Estado: {ticket['estado']}\n"
-                    f"{p_emoji} Prioridad: {ticket.get('prioridad', 'Sin asignar')}\n\n"
+                    f"{e_emoji} *TICKET #{ticket['numero']}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🏨 *Hotel:* {ticket.get('hotel', 'Sin especificar')}\n"
+                    f"📞 *Cliente:* {formatear_telefono(ticket['telefono'])}\n"
+                    f"🕐 *Fecha:* {ticket['fecha']}\n"
+                    f"📊 *Estado:* {ticket['estado']}\n"
+                    f"🎯 *Prioridad:* {p_emoji} {ticket.get('prioridad', 'Sin asignar')}\n\n"
+                    f"─────────────────────\n"
                     f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
                 )
                 if ticket.get("imagenes"):
                     detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
                 detalle += (
-                    f"\n---\n"
-                    f"Responder: *R{ticket['numero']} [mensaje]*\n"
-                    f"Estado: *E{ticket['numero']} [estado]*\n"
-                    f"Prioridad: *P{ticket['numero']} Alta/Media/Baja*"
+                    f"\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"⚡ *Acciones rapidas:*\n"
+                    f"  *R{ticket['numero']}* [mensaje] → Responder\n"
+                    f"  *E{ticket['numero']}* [estado] → Cambiar estado\n"
+                    f"  *P{ticket['numero']}* [prioridad] → Prioridad"
                 )
                 enviar_mensaje(ADMIN_PHONE, detalle)
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
+                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
         except Exception:
             enviar_mensaje(ADMIN_PHONE, "❌ Formato incorrecto. Use: *V24*")
         return
@@ -793,14 +843,20 @@ def procesar_comando_admin(texto_original):
             if ticket:
                 enviar_mensaje(
                     ticket["telefono"],
-                    f"📩 *Respuesta de IT Support and Services SAC*\n"
-                    f"_(Ticket #{ticket['numero']})_\n\n"
-                    f"{mensaje_respuesta}"
+                    f"💬 *Respuesta — Ticket #{ticket['numero']}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"{mensaje_respuesta}\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"*IT Support and Services SAC*"
                 )
                 agregar_info_a_ticket(numero, f"[RESPUESTA ADMIN] {mensaje_respuesta}")
-                enviar_mensaje(ADMIN_PHONE, f"✅ Respuesta enviada al cliente del ticket #{numero} ({ticket.get('hotel', '')})")
+                enviar_mensaje(
+                    ADMIN_PHONE,
+                    f"✅ *Respuesta enviada*\n"
+                    f"  📨 Ticket *#{numero}* · 🏨 {ticket.get('hotel', '')}"
+                )
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
+                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
         except Exception as e:
             print(f"Error en comando R: {e}")
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *R24 Tu mensaje aqui*")
@@ -811,7 +867,7 @@ def procesar_comando_admin(texto_original):
             resto = texto[1:].strip()
             partes = resto.split(" ", 1)
             if len(partes) < 2:
-                enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*\nPrioridades: Alta, Media, Baja")
+                enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*\n_Prioridades: Alta · Media · Baja_")
                 return
             numero = partes[0].strip()
             nueva_prioridad = partes[1].strip()
@@ -823,18 +879,22 @@ def procesar_comando_admin(texto_original):
             elif prioridad_lower in ["baja", "menor"]:
                 nueva_prioridad = "Baja"
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ Prioridad no valida: {nueva_prioridad}\nUse: Alta, Media, o Baja")
+                enviar_mensaje(ADMIN_PHONE, f"❌ Prioridad no valida: _{nueva_prioridad}_\n_Use: Alta · Media · Baja_")
                 return
             ticket = obtener_ticket(numero)
             if ticket:
                 exito = cambiar_prioridad_ticket(numero, nueva_prioridad)
                 if exito:
                     p_emoji = prioridad_emoji(nueva_prioridad)
-                    enviar_mensaje(ADMIN_PHONE, f"{p_emoji} Ticket #{numero} prioridad actualizada a: *{nueva_prioridad}*")
+                    enviar_mensaje(
+                        ADMIN_PHONE,
+                        f"{p_emoji} *Prioridad actualizada*\n"
+                        f"  🎯 Ticket *#{numero}* → *{nueva_prioridad}*"
+                    )
                 else:
-                    enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando prioridad del ticket #{numero}")
+                    enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket *#{numero}*")
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
+                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
         except Exception as e:
             print(f"Error en comando P: {e}")
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*")
@@ -845,7 +905,7 @@ def procesar_comando_admin(texto_original):
             resto = texto[1:].strip()
             partes = resto.split(" ", 1)
             if len(partes) < 2:
-                enviar_mensaje(ADMIN_PHONE, "❌ Formato: *E24 En proceso*\nEstados: Pendiente, En proceso, Resuelto")
+                enviar_mensaje(ADMIN_PHONE, "❌ Formato: *E24 En proceso*\n_Estados: Pendiente · En proceso · Resuelto_")
                 return
             numero = partes[0].strip()
             nuevo_estado = partes[1].strip()
@@ -857,31 +917,40 @@ def procesar_comando_admin(texto_original):
             elif estado_lower in ["resuelto", "cerrado", "completado", "listo"]:
                 nuevo_estado = "Resuelto"
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ Estado no valido: {nuevo_estado}\nUse: Pendiente, En proceso, o Resuelto")
+                enviar_mensaje(ADMIN_PHONE, f"❌ Estado no valido: _{nuevo_estado}_\n_Use: Pendiente · En proceso · Resuelto_")
                 return
             ticket = obtener_ticket(numero)
             if ticket:
                 exito = cambiar_estado_ticket(numero, nuevo_estado)
                 if exito:
-                    estado_emoji = "🟡" if nuevo_estado == "Pendiente" else ("🔵" if nuevo_estado == "En proceso" else "🟢")
-                    enviar_mensaje(ADMIN_PHONE, f"{estado_emoji} Ticket #{numero} actualizado a: *{nuevo_estado}*")
+                    e_emoji = estado_emoji(nuevo_estado)
+                    enviar_mensaje(
+                        ADMIN_PHONE,
+                        f"{e_emoji} *Estado actualizado*\n"
+                        f"  📊 Ticket *#{numero}* → *{nuevo_estado}*"
+                    )
                     enviar_mensaje(
                         ticket["telefono"],
-                        f"📋 *Actualizacion de su ticket #{numero}*\n\n"
+                        f"📋 *Actualizacion — Ticket #{numero}*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
                         f"Su ticket ha sido actualizado a: *{nuevo_estado}*\n\n"
-                        f"Gracias por su paciencia.\n"
+                        f"Gracias por su paciencia 🙏\n\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"*IT Support and Services SAC*"
                     )
                 else:
-                    enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket #{numero}")
+                    enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket *#{numero}*")
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket #{numero}")
+                enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
         except Exception as e:
             print(f"Error en comando E: {e}")
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *E24 En proceso*")
         return
 
-    enviar_mensaje(ADMIN_PHONE, f"No reconozco ese comando.\n\n{MENU_ADMIN}")
+    enviar_mensaje(
+        ADMIN_PHONE,
+        f"❓ Comando no reconocido.\n\nEscriba *ayuda* para ver los comandos disponibles."
+    )
 
 
 # ============================================
@@ -937,7 +1006,10 @@ def recibir_mensaje():
             if tipo_mensaje == "text":
                 procesar_comando_admin(texto_original)
             else:
-                enviar_mensaje(ADMIN_PHONE, "Los comandos de admin solo funcionan con texto.\n\n" + MENU_ADMIN)
+                enviar_mensaje(
+                    ADMIN_PHONE,
+                    "⚠️ Los comandos de admin solo funcionan con texto.\n\nEscriba *ayuda* para ver los comandos."
+                )
             return jsonify({"status": "ok"}), 200
 
         # ============================================
@@ -961,10 +1033,13 @@ def recibir_mensaje():
                 set_estado(telefono, "menu", hotel=hotel)
                 enviar_mensaje(
                     telefono,
-                    f"Gracias! Registrado como contacto de *{hotel}*.\n\n{MENU_PRINCIPAL}"
+                    f"✅ Registrado como contacto de *{hotel}*\n\n{MENU_PRINCIPAL}"
                 )
             else:
-                enviar_mensaje(telefono, "Por favor, escriba el nombre del hotel desde donde nos contacta.")
+                enviar_mensaje(
+                    telefono,
+                    "✏️ Por favor, escriba el nombre del hotel desde donde nos contacta."
+                )
             return jsonify({"status": "ok"}), 200
 
         # Primera vez o conversacion reseteada
@@ -972,10 +1047,11 @@ def recibir_mensaje():
             if not hotel_conocido:
                 enviar_mensaje(
                     telefono,
-                    "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                    "Somos su aliado en soporte tecnico y servicios de TI.\n\n"
-                    "Para poder atenderle mejor, por favor indiquenos:\n"
-                    "*De que hotel nos esta contactando?*"
+                    f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
+                    f"Para poder atenderle mejor:\n"
+                    f"🏨 *¿De que hotel nos esta contactando?*"
                 )
                 set_estado(telefono, "esperando_hotel")
                 return jsonify({"status": "ok"}), 200
@@ -985,7 +1061,8 @@ def recibir_mensaje():
                     if estado is None:
                         enviar_mensaje(
                             telefono,
-                            f"Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                            f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n\n"
                             f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
                             f"{MENU_PRINCIPAL}"
                         )
@@ -995,25 +1072,30 @@ def recibir_mensaje():
                 else:
                     enviar_mensaje(
                         telefono,
-                        "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                        "Estamos registrando su reporte. Si desea agregar mas detalles o imagenes, "
-                        "envielos ahora. Su ticket se creara en unos segundos."
+                        f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"📝 Estamos registrando su reporte.\n\n"
+                        f"Si desea agregar mas detalles o imagenes, envielos ahora.\n"
+                        f"Su ticket se creara en unos segundos ⏳"
                     )
                     set_estado(telefono, "acumulando_nuevo")
                     agregar_al_buffer(telefono, "nuevo", texto=texto_original)
             elif tipo_mensaje == "image":
                 enviar_mensaje(
                     telefono,
-                    "Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
-                    "Estamos registrando su reporte. Si desea agregar mas detalles o imagenes, "
-                    "envielos ahora. Su ticket se creara en unos segundos."
+                    f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"📝 Estamos registrando su reporte.\n\n"
+                    f"Si desea agregar mas detalles o imagenes, envielos ahora.\n"
+                    f"Su ticket se creara en unos segundos ⏳"
                 )
                 set_estado(telefono, "acumulando_nuevo")
                 procesar_imagen(telefono, mensaje, "nuevo")
             else:
                 enviar_mensaje(
                     telefono,
-                    f"Hola! Bienvenido/a a *IT Support and Services SAC*.\n\n"
+                    f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"{MENU_PRINCIPAL}"
                 )
                 set_estado(telefono, "menu")
@@ -1024,9 +1106,13 @@ def recibir_mensaje():
             if texto == "1":
                 enviar_mensaje(
                     telefono,
-                    "Por favor, describanos el problema o consulta que tiene.\n\n"
-                    "Puede enviar texto y/o imagenes/screenshots.\n\n"
-                    "_(Escriba *menu* en cualquier momento para volver al menu principal)_"
+                    "🛠️ *Nuevo reporte*\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "Describanos el problema o consulta que tiene.\n\n"
+                    "📝 Puede enviar texto\n"
+                    "📸 Puede enviar imagenes/screenshots\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "_Escriba *menu* para volver al menu principal_"
                 )
                 set_estado(telefono, "esperando_problema")
             elif texto == "2":
@@ -1034,21 +1120,32 @@ def recibir_mensaje():
                 if not tickets:
                     enviar_mensaje(
                         telefono,
-                        "No tiene tickets registrados todavia.\n\n" + MENU_PRINCIPAL
+                        "📭 No tiene tickets registrados todavia.\n\n" + MENU_PRINCIPAL
                     )
                 else:
-                    lista = "Sus tickets:\n\n"
+                    lista = (
+                        "🔍 *Sus tickets*\n"
+                        "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    )
                     for t in tickets:
-                        estado_emoji = "🟡" if t["estado"] == "Pendiente" else ("🔵" if t["estado"] == "En proceso" else "🟢")
-                        lista += f"{estado_emoji} *Ticket #{t['numero']}* - {t['estado']}\n"
-                        lista += f"   {t['fecha']}\n"
-                        lista += f"   {t['descripcion']}\n\n"
-                    lista += "Escriba el *numero del ticket* que desea consultar.\n\n"
-                    lista += "_(Escriba *menu* para volver al menu principal)_"
+                        e_emoji = estado_emoji(t["estado"])
+                        lista += (
+                            f"{e_emoji} *Ticket #{t['numero']}* · {t['estado']}\n"
+                            f"    🕐 {t['fecha']}\n"
+                            f"    📝 {t['descripcion']}\n\n"
+                        )
+                    lista += (
+                        "━━━━━━━━━━━━━━━━━━━━\n"
+                        "Escriba el *numero* del ticket que desea consultar.\n"
+                        "_Escriba *menu* para volver_"
+                    )
                     enviar_mensaje(telefono, lista)
                     set_estado(telefono, "listando_tickets")
             else:
-                enviar_mensaje(telefono, "Por favor, responda con *1* o *2*.\n\n" + MENU_PRINCIPAL)
+                enviar_mensaje(
+                    telefono,
+                    "⚠️ Opcion no valida.\n\n" + MENU_PRINCIPAL
+                )
             return jsonify({"status": "ok"}), 200
 
         # Esperando descripcion del problema
@@ -1063,7 +1160,7 @@ def recibir_mensaje():
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "nuevo")
             else:
-                enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
+                enviar_mensaje(telefono, "⚠️ Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # Acumulando mensajes para nuevo ticket
@@ -1074,7 +1171,10 @@ def recibir_mensaje():
                         if buffer_mensajes[telefono]["timer"]:
                             buffer_mensajes[telefono]["timer"].cancel()
                         del buffer_mensajes[telefono]
-                enviar_mensaje(telefono, "Ticket cancelado.\n\n" + MENU_PRINCIPAL)
+                enviar_mensaje(
+                    telefono,
+                    "🚫 Ticket cancelado.\n\n" + MENU_PRINCIPAL
+                )
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             if tipo_mensaje == "text":
@@ -1082,7 +1182,7 @@ def recibir_mensaje():
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "nuevo")
             else:
-                enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
+                enviar_mensaje(telefono, "⚠️ Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # Listando tickets
@@ -1095,19 +1195,21 @@ def recibir_mensaje():
                 numero_ticket = texto.replace("#", "").strip()
                 ticket = obtener_ticket(numero_ticket)
                 if ticket and ticket["telefono"] == telefono:
-                    estado_emoji = "🟡" if ticket["estado"] == "Pendiente" else ("🔵" if ticket["estado"] == "En proceso" else "🟢")
+                    e_emoji = estado_emoji(ticket["estado"])
                     detalle = (
-                        f"{estado_emoji} *Ticket #{ticket['numero']}*\n\n"
-                        f"*Fecha:* {ticket['fecha']}\n"
-                        f"*Estado:* {ticket['estado']}\n\n"
-                        f"*Descripcion:*\n{ticket['descripcion']}\n"
+                        f"{e_emoji} *Ticket #{ticket['numero']}*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"🕐 *Fecha:* {ticket['fecha']}\n"
+                        f"📊 *Estado:* {ticket['estado']}\n\n"
+                        f"─────────────────────\n"
+                        f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
                     )
                     if ticket.get("imagenes"):
-                        detalle += f"\n*Imagenes:*\n{ticket['imagenes']}\n"
+                        detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
                     detalle += (
-                        f"\n---\n"
-                        f"*1* - Agregar informacion a este ticket\n"
-                        f"*2* - Volver al menu principal\n\n"
+                        f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                        f"*1* ✏️ Agregar informacion\n"
+                        f"*2* ↩️ Volver al menu\n\n"
                         f"Responda con *1* o *2*"
                     )
                     enviar_mensaje(telefono, detalle)
@@ -1115,14 +1217,14 @@ def recibir_mensaje():
                 else:
                     enviar_mensaje(
                         telefono,
-                        "No se encontro ese ticket o no le pertenece.\n\n"
-                        "_(Escriba *menu* para volver al menu principal)_"
+                        "❌ No se encontro ese ticket o no le pertenece.\n\n"
+                        "_Escriba *menu* para volver al menu principal_"
                     )
             except Exception:
                 enviar_mensaje(
                     telefono,
-                    "Por favor escriba solo el numero del ticket (ejemplo: *5*).\n\n"
-                    "_(Escriba *menu* para volver al menu principal)_"
+                    "⚠️ Escriba solo el numero del ticket.\n_Ejemplo: *5*_\n\n"
+                    "_Escriba *menu* para volver_"
                 )
             return jsonify({"status": "ok"}), 200
 
@@ -1131,16 +1233,23 @@ def recibir_mensaje():
             if texto == "1":
                 enviar_mensaje(
                     telefono,
-                    "Envie la informacion adicional que desea agregar al ticket.\n\n"
-                    "Puede enviar texto y/o imagenes/screenshots.\n\n"
-                    "_(Escriba *menu* para cancelar y volver al menu principal)_"
+                    "✏️ *Agregar informacion*\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "Envie la informacion adicional.\n\n"
+                    "📝 Puede enviar texto\n"
+                    "📸 Puede enviar imagenes/screenshots\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "_Escriba *menu* para cancelar_"
                 )
                 set_estado(telefono, "esperando_info")
             elif texto == "2" or texto == "menu":
                 enviar_mensaje(telefono, MENU_PRINCIPAL)
                 set_estado(telefono, "menu")
             else:
-                enviar_mensaje(telefono, "Por favor, responda con *1* para agregar informacion o *2* para volver al menu.")
+                enviar_mensaje(
+                    telefono,
+                    "⚠️ Responda con *1* para agregar informacion o *2* para volver."
+                )
             return jsonify({"status": "ok"}), 200
 
         # Esperando info adicional
@@ -1155,7 +1264,7 @@ def recibir_mensaje():
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "info")
             else:
-                enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
+                enviar_mensaje(telefono, "⚠️ Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # Acumulando info adicional
@@ -1166,7 +1275,10 @@ def recibir_mensaje():
                         if buffer_mensajes[telefono]["timer"]:
                             buffer_mensajes[telefono]["timer"].cancel()
                         del buffer_mensajes[telefono]
-                enviar_mensaje(telefono, "Actualizacion cancelada.\n\n" + MENU_PRINCIPAL)
+                enviar_mensaje(
+                    telefono,
+                    "🚫 Actualizacion cancelada.\n\n" + MENU_PRINCIPAL
+                )
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
             if tipo_mensaje == "text":
@@ -1174,7 +1286,7 @@ def recibir_mensaje():
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "info")
             else:
-                enviar_mensaje(telefono, "Por el momento solo podemos recibir texto e imagenes.")
+                enviar_mensaje(telefono, "⚠️ Por el momento solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # Estado desconocido
