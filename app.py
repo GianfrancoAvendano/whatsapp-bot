@@ -60,6 +60,14 @@ MENU_ADMIN = (
     "Escriba *ayuda* para ver este menu"
 )
 
+MSG_DESPEDIDA = (
+    "👋 *¡Gracias por contactarnos!*\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Si necesita ayuda nuevamente, no dude en escribirnos.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "*IT Support and Services SAC* 🤝"
+)
+
 
 def hora_peru():
     return datetime.utcnow() + timedelta(hours=PERU_UTC_OFFSET)
@@ -100,7 +108,6 @@ def es_descripcion_problema(texto):
 # ============================================
 
 def enviar_mensaje(telefono, mensaje):
-    """Envia un mensaje de texto simple."""
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -123,11 +130,6 @@ def enviar_mensaje(telefono, mensaje):
 
 
 def enviar_botones(telefono, texto_cuerpo, botones, texto_header=None, texto_footer=None):
-    """
-    Envia un mensaje interactivo con botones (max 3).
-    botones = [{"id": "btn_1", "title": "Opcion 1"}, ...]
-    Titulo max 20 caracteres.
-    """
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -164,11 +166,6 @@ def enviar_botones(telefono, texto_cuerpo, botones, texto_header=None, texto_foo
 
 
 def enviar_lista(telefono, texto_cuerpo, boton_texto, secciones, texto_header=None, texto_footer=None):
-    """
-    Envia un mensaje interactivo con lista desplegable.
-    secciones = [{"title": "Seccion", "rows": [{"id": "row_1", "title": "Fila 1", "description": "Desc"}]}]
-    Titulo de fila max 24 chars, descripcion max 72 chars.
-    """
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -203,7 +200,6 @@ def enviar_lista(telefono, texto_cuerpo, boton_texto, secciones, texto_header=No
 
 
 def enviar_menu_principal(telefono):
-    """Envia el menu principal con botones interactivos."""
     enviar_botones(
         telefono,
         "📋 *¿Como podemos ayudarle?*",
@@ -212,6 +208,25 @@ def enviar_menu_principal(telefono):
             {"id": "menu_consultar", "title": "🔍 Consultar ticket"},
         ],
         texto_header="IT Support and Services SAC",
+        texto_footer="Seleccione una opcion"
+    )
+
+
+def enviar_despedida(telefono):
+    enviar_mensaje(telefono, MSG_DESPEDIDA)
+    set_estado(telefono, "listo")
+
+
+def enviar_botones_post_accion(telefono):
+    """Botones que aparecen despues de crear/actualizar ticket."""
+    enviar_botones(
+        telefono,
+        "¿Desea realizar otra consulta?",
+        [
+            {"id": "menu_nuevo", "title": "🛠️ Nuevo reporte"},
+            {"id": "menu_consultar", "title": "🔍 Consultar ticket"},
+            {"id": "finalizar", "title": "✅ Eso es todo"},
+        ],
         texto_footer="Seleccione una opcion"
     )
 
@@ -274,9 +289,7 @@ def subir_imagen_a_imgbb(image_data, filename):
         resp.raise_for_status()
         result = resp.json()
         if result.get("success"):
-            link = result["data"]["url"]
-            print(f"Imagen subida a imgbb: {link}")
-            return link
+            return result["data"]["url"]
         return None
     except Exception as e:
         print(f"Error subiendo imagen a imgbb: {e}")
@@ -338,7 +351,6 @@ def migrar_hoja(sheet):
         sheet.clear()
         for fila in nuevas_filas:
             sheet.append_row(fila)
-        print(f"Migracion completada: {len(nuevas_filas) - 1} tickets migrados")
     except Exception as e:
         print(f"Error en migracion: {e}")
 
@@ -356,7 +368,7 @@ def buscar_hotel_cliente(telefono):
                 hotel_cache[telefono] = fila[3]
                 return fila[3]
         return None
-    except Exception as e:
+    except:
         return None
 
 
@@ -372,8 +384,7 @@ def buscar_tickets_cliente(telefono):
                 continue
             if len(fila) >= 6 and fila[2] == telefono:
                 tickets.append({
-                    "numero": fila[0],
-                    "fecha": fila[1],
+                    "numero": fila[0], "fecha": fila[1],
                     "hotel": fila[3] if len(fila) > 3 else "",
                     "descripcion": fila[4][:80] + ("..." if len(fila[4]) > 80 else "") if len(fila) > 4 else "",
                     "estado": fila[5] if len(fila) > 5 else "Pendiente",
@@ -381,7 +392,7 @@ def buscar_tickets_cliente(telefono):
                     "fila": i + 1
                 })
         return tickets
-    except Exception as e:
+    except:
         return []
 
 
@@ -397,16 +408,14 @@ def buscar_tickets_pendientes():
                 continue
             if len(fila) >= 6 and fila[5] in ["Pendiente", "En proceso"]:
                 tickets.append({
-                    "numero": fila[0],
-                    "fecha": fila[1],
-                    "telefono": fila[2],
+                    "numero": fila[0], "fecha": fila[1], "telefono": fila[2],
                     "hotel": fila[3] if len(fila) > 3 else "",
                     "descripcion": fila[4][:80] + ("..." if len(fila[4]) > 80 else "") if len(fila) > 4 else "",
                     "estado": fila[5],
                     "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
                 })
         return tickets
-    except Exception as e:
+    except:
         return []
 
 
@@ -432,7 +441,7 @@ def buscar_tickets_por_hotel(hotel_buscar):
                         "prioridad": fila[6] if len(fila) > 6 else "Sin asignar",
                     })
         return tickets
-    except Exception as e:
+    except:
         return []
 
 
@@ -456,7 +465,7 @@ def obtener_ticket(numero_ticket):
                     "fila": i + 1
                 }
         return None
-    except Exception as e:
+    except:
         return None
 
 
@@ -473,7 +482,7 @@ def cambiar_estado_ticket(numero_ticket, nuevo_estado):
                 sheet.update_cell(i + 1, 6, nuevo_estado)
                 return True
         return False
-    except Exception as e:
+    except:
         return False
 
 
@@ -490,7 +499,7 @@ def cambiar_prioridad_ticket(numero_ticket, nueva_prioridad):
                 sheet.update_cell(i + 1, 7, nueva_prioridad)
                 return True
         return False
-    except Exception as e:
+    except:
         return False
 
 
@@ -514,7 +523,7 @@ def agregar_info_a_ticket(numero_ticket, nueva_info, nuevas_imagenes=None):
                     sheet.update_cell(fila_num, 8, f"{imagenes_actuales}\n{nuevos_links}" if imagenes_actuales else nuevos_links)
                 return True
         return False
-    except Exception as e:
+    except:
         return False
 
 
@@ -582,7 +591,7 @@ def procesar_nuevo_ticket(telefono):
         resumen = descripcion_completa[:200] + ("..." if len(descripcion_completa) > 200 else "")
         img_texto = f"\n📎 _{len(imagenes)} imagen(es) adjunta(s)_" if imagenes else ""
 
-        # Mensaje al cliente con boton
+        # Mensaje al cliente
         enviar_mensaje(
             telefono,
             f"✅ *Ticket #{numero_ticket} registrado*\n"
@@ -593,16 +602,7 @@ def procesar_nuevo_ticket(telefono):
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"Gracias por confiar en *IT Support and Services SAC* 🤝"
         )
-        # Boton para volver al menu
-        enviar_botones(
-            telefono,
-            "¿Desea realizar otra consulta?",
-            [
-                {"id": "menu_nuevo", "title": "🛠️ Nuevo reporte"},
-                {"id": "menu_consultar", "title": "🔍 Consultar ticket"},
-            ],
-            texto_footer="Seleccione una opcion o escriba su mensaje"
-        )
+        enviar_botones_post_accion(telefono)
 
         # Notificacion al admin
         img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes) if imagenes else ""
@@ -655,15 +655,8 @@ def procesar_info_adicional(telefono):
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"Gracias por confiar en *IT Support and Services SAC* 🤝"
         )
-        enviar_botones(
-            telefono,
-            "¿Desea realizar otra consulta?",
-            [
-                {"id": "menu_nuevo", "title": "🛠️ Nuevo reporte"},
-                {"id": "menu_consultar", "title": "🔍 Consultar ticket"},
-            ],
-            texto_footer="Seleccione una opcion o escriba su mensaje"
-        )
+        enviar_botones_post_accion(telefono)
+
         # Notificacion al admin
         img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes) if imagenes else ""
         hotel = get_hotel(telefono) or "Sin especificar"
@@ -871,7 +864,7 @@ def procesar_comando_admin(texto_original):
                 enviar_mensaje(ADMIN_PHONE, detalle)
             else:
                 enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
-        except Exception:
+        except:
             enviar_mensaje(ADMIN_PHONE, "❌ Formato incorrecto. Use: *V24*")
         return
 
@@ -898,7 +891,7 @@ def procesar_comando_admin(texto_original):
                 enviar_mensaje(ADMIN_PHONE, f"✅ *Respuesta enviada*\n  📨 Ticket *#{numero}* · 🏨 {ticket.get('hotel', '')}")
             else:
                 enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
-        except Exception as e:
+        except:
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *R24 Tu mensaje aqui*")
         return
 
@@ -918,7 +911,7 @@ def procesar_comando_admin(texto_original):
             elif nueva_prioridad in ["baja", "menor"]:
                 nueva_prioridad = "Baja"
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ Prioridad no valida.\n_Use: Alta · Media · Baja_")
+                enviar_mensaje(ADMIN_PHONE, "❌ Prioridad no valida.\n_Use: Alta · Media · Baja_")
                 return
             ticket = obtener_ticket(numero)
             if ticket:
@@ -929,7 +922,7 @@ def procesar_comando_admin(texto_original):
                     enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket *#{numero}*")
             else:
                 enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
-        except Exception:
+        except:
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *P24 Alta*")
         return
 
@@ -949,7 +942,7 @@ def procesar_comando_admin(texto_original):
             elif nuevo_estado in ["resuelto", "cerrado", "completado", "listo"]:
                 nuevo_estado = "Resuelto"
             else:
-                enviar_mensaje(ADMIN_PHONE, f"❌ Estado no valido.\n_Use: Pendiente · En proceso · Resuelto_")
+                enviar_mensaje(ADMIN_PHONE, "❌ Estado no valido.\n_Use: Pendiente · En proceso · Resuelto_")
                 return
             ticket = obtener_ticket(numero)
             if ticket:
@@ -969,11 +962,71 @@ def procesar_comando_admin(texto_original):
                     enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket *#{numero}*")
             else:
                 enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{numero}*")
-        except Exception:
+        except:
             enviar_mensaje(ADMIN_PHONE, "❌ Formato: *E24 En proceso*")
         return
 
-    enviar_mensaje(ADMIN_PHONE, f"❓ Comando no reconocido.\n\nEscriba *ayuda* para ver los comandos.")
+    enviar_mensaje(ADMIN_PHONE, "❓ Comando no reconocido.\n\nEscriba *ayuda* para ver los comandos.")
+
+
+# ============================================
+# HELPER DISPLAY FUNCTIONS
+# ============================================
+
+def mostrar_tickets_cliente(telefono):
+    tickets = buscar_tickets_cliente(telefono)
+    if not tickets:
+        enviar_mensaje(telefono, "📭 No tiene tickets registrados todavia.")
+        enviar_menu_principal(telefono)
+        return
+    if len(tickets) <= 10:
+        rows = []
+        for t in tickets:
+            e_emoji = estado_emoji(t["estado"])
+            title = f"{e_emoji} Ticket #{t['numero']}"
+            desc = f"{t['estado']} · {t['descripcion'][:60]}"
+            rows.append({"id": f"ticket_{t['numero']}", "title": title[:24], "description": desc[:72]})
+        enviar_lista(
+            telefono,
+            f"🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\nTiene *{len(tickets)}* ticket(s) registrado(s).\n\nSeleccione un ticket para ver sus detalles.",
+            "📋 Ver tickets",
+            [{"title": "Sus tickets", "rows": rows}],
+            texto_footer="Escriba 'menu' para volver"
+        )
+    else:
+        lista = "🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        for t in tickets:
+            e_emoji = estado_emoji(t["estado"])
+            lista += f"{e_emoji} *Ticket #{t['numero']}* · {t['estado']}\n    🕐 {t['fecha']}\n    📝 {t['descripcion']}\n\n"
+        lista += "━━━━━━━━━━━━━━━━━━━━\nEscriba el *numero* del ticket que desea consultar.\n_Escriba *menu* para volver_"
+        enviar_mensaje(telefono, lista)
+    set_estado(telefono, "listando_tickets")
+
+
+def mostrar_detalle_ticket(telefono, ticket):
+    e_emoji = estado_emoji(ticket["estado"])
+    detalle = (
+        f"{e_emoji} *Ticket #{ticket['numero']}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🕐 *Fecha:* {ticket['fecha']}\n"
+        f"📊 *Estado:* {ticket['estado']}\n\n"
+        f"─────────────────────\n"
+        f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
+    )
+    if ticket.get("imagenes"):
+        detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
+    enviar_mensaje(telefono, detalle)
+    enviar_botones(
+        telefono,
+        "¿Que desea hacer?",
+        [
+            {"id": "vticket_agregar", "title": "✏️ Agregar info"},
+            {"id": "vticket_menu", "title": "↩️ Volver al menu"},
+            {"id": "finalizar", "title": "✅ Eso es todo"},
+        ],
+        texto_footer=f"Ticket #{ticket['numero']}"
+    )
+    set_estado(telefono, "viendo_ticket", ticket_actual=ticket["numero"])
 
 
 # ============================================
@@ -1014,7 +1067,6 @@ def recibir_mensaje():
         telefono = mensaje.get("from", "")
         tipo_mensaje = mensaje.get("type", "")
 
-        # ── Extract text from any message type ──
         texto = ""
         texto_original = ""
         button_id = ""
@@ -1042,6 +1094,13 @@ def recibir_mensaje():
                 procesar_comando_admin(texto_original)
             else:
                 enviar_mensaje(ADMIN_PHONE, "⚠️ Los comandos solo funcionan con texto.\n\nEscriba *ayuda* para ver los comandos.")
+            return jsonify({"status": "ok"}), 200
+
+        # ============================================
+        # CLIENT - Global finalizar check
+        # ============================================
+        if button_id == "finalizar":
+            enviar_despedida(telefono)
             return jsonify({"status": "ok"}), 200
 
         # ============================================
@@ -1074,11 +1133,11 @@ def recibir_mensaje():
             if not hotel_conocido:
                 enviar_mensaje(
                     telefono,
-                    f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"Somos su aliado en soporte tecnico y servicios de TI.\n\n"
-                    f"Para poder atenderle mejor:\n"
-                    f"🏨 *¿De que hotel nos esta contactando?*"
+                    "👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "Somos su aliado en soporte tecnico y servicios de TI.\n\n"
+                    "Para poder atenderle mejor:\n"
+                    "🏨 *¿De que hotel nos esta contactando?*"
                 )
                 set_estado(telefono, "esperando_hotel")
                 return jsonify({"status": "ok"}), 200
@@ -1088,36 +1147,35 @@ def recibir_mensaje():
                     if estado is None:
                         enviar_mensaje(
                             telefono,
-                            f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                            f"Somos su aliado en soporte tecnico y servicios de TI."
+                            "👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                            "━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "Somos su aliado en soporte tecnico y servicios de TI."
                         )
                     enviar_menu_principal(telefono)
                     set_estado(telefono, "menu")
                 else:
                     enviar_mensaje(
                         telefono,
-                        f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"📝 Estamos registrando su reporte.\n\n"
-                        f"Si desea agregar mas detalles o imagenes, envielos ahora.\n"
-                        f"Su ticket se creara en unos segundos ⏳"
+                        "👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                        "━━━━━━━━━━━━━━━━━━━━\n\n"
+                        "📝 Estamos registrando su reporte.\n\n"
+                        "Si desea agregar mas detalles o imagenes, envielos ahora.\n"
+                        "Su ticket se creara en unos segundos ⏳"
                     )
                     set_estado(telefono, "acumulando_nuevo")
                     agregar_al_buffer(telefono, "nuevo", texto=texto_original)
             elif tipo_mensaje == "image":
                 enviar_mensaje(
                     telefono,
-                    f"👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"📝 Estamos registrando su reporte.\n\n"
-                    f"Si desea agregar mas detalles o imagenes, envielos ahora.\n"
-                    f"Su ticket se creara en unos segundos ⏳"
+                    "👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "📝 Estamos registrando su reporte.\n\n"
+                    "Si desea agregar mas detalles o imagenes, envielos ahora.\n"
+                    "Su ticket se creara en unos segundos ⏳"
                 )
                 set_estado(telefono, "acumulando_nuevo")
                 procesar_imagen(telefono, mensaje, "nuevo")
             elif tipo_mensaje == "interactive":
-                # Came from a button press while in listo state
                 if button_id == "menu_nuevo":
                     enviar_mensaje(
                         telefono,
@@ -1142,7 +1200,6 @@ def recibir_mensaje():
 
         # ── Menu principal ──
         if estado == "menu":
-            # Button press
             if button_id == "menu_nuevo" or texto == "1":
                 enviar_mensaje(
                     telefono,
@@ -1203,7 +1260,6 @@ def recibir_mensaje():
                 enviar_menu_principal(telefono)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
-            # List reply from ticket list
             numero_ticket = ""
             if button_id.startswith("ticket_"):
                 numero_ticket = button_id.replace("ticket_", "")
@@ -1215,7 +1271,7 @@ def recibir_mensaje():
                     mostrar_detalle_ticket(telefono, ticket)
                 else:
                     enviar_mensaje(telefono, "❌ No se encontro ese ticket o no le pertenece.\n\n_Escriba *menu* para volver_")
-            except Exception:
+            except:
                 enviar_mensaje(telefono, "⚠️ Escriba solo el numero del ticket.\n_Ejemplo: *5*_\n\n_Escriba *menu* para volver_")
             return jsonify({"status": "ok"}), 200
 
@@ -1284,75 +1340,6 @@ def recibir_mensaje():
         import traceback
         traceback.print_exc()
     return jsonify({"status": "ok"}), 200
-
-
-def mostrar_tickets_cliente(telefono):
-    """Muestra los tickets del cliente como lista interactiva."""
-    tickets = buscar_tickets_cliente(telefono)
-    if not tickets:
-        enviar_mensaje(telefono, "📭 No tiene tickets registrados todavia.")
-        enviar_menu_principal(telefono)
-        return
-
-    # Si tiene 10 o menos tickets, usar lista interactiva
-    if len(tickets) <= 10:
-        rows = []
-        for t in tickets:
-            e_emoji = estado_emoji(t["estado"])
-            title = f"{e_emoji} Ticket #{t['numero']}"
-            desc = f"{t['estado']} · {t['descripcion'][:60]}"
-            rows.append({
-                "id": f"ticket_{t['numero']}",
-                "title": title[:24],
-                "description": desc[:72]
-            })
-        enviar_lista(
-            telefono,
-            f"🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\nTiene *{len(tickets)}* ticket(s) registrado(s).\n\nSeleccione un ticket para ver sus detalles.",
-            "📋 Ver tickets",
-            [{"title": "Sus tickets", "rows": rows}],
-            texto_footer="Escriba 'menu' para volver"
-        )
-    else:
-        # Mas de 10, mostrar como texto
-        lista = "🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\n"
-        for t in tickets:
-            e_emoji = estado_emoji(t["estado"])
-            lista += f"{e_emoji} *Ticket #{t['numero']}* · {t['estado']}\n    🕐 {t['fecha']}\n    📝 {t['descripcion']}\n\n"
-        lista += "━━━━━━━━━━━━━━━━━━━━\nEscriba el *numero* del ticket que desea consultar.\n_Escriba *menu* para volver_"
-        enviar_mensaje(telefono, lista)
-
-    set_estado(telefono, "listando_tickets")
-
-
-def mostrar_detalle_ticket(telefono, ticket):
-    """Muestra el detalle de un ticket con botones de accion."""
-    e_emoji = estado_emoji(ticket["estado"])
-    detalle = (
-        f"{e_emoji} *Ticket #{ticket['numero']}*\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🕐 *Fecha:* {ticket['fecha']}\n"
-        f"📊 *Estado:* {ticket['estado']}\n\n"
-        f"─────────────────────\n"
-        f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
-    )
-    if ticket.get("imagenes"):
-        detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
-
-    # Enviar detalle como texto
-    enviar_mensaje(telefono, detalle)
-
-    # Enviar botones de accion
-    enviar_botones(
-        telefono,
-        "¿Que desea hacer?",
-        [
-            {"id": "vticket_agregar", "title": "✏️ Agregar info"},
-            {"id": "vticket_menu", "title": "↩️ Volver al menu"},
-        ],
-        texto_footer=f"Ticket #{ticket['numero']}"
-    )
-    set_estado(telefono, "viendo_ticket", ticket_actual=ticket["numero"])
 
 
 # ============================================
