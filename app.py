@@ -55,7 +55,7 @@ MENU_ADMIN = (
     "📋 *LISTADOS*\n"
     "  *T* — Ver tickets pendientes\n"
     "  *H [hotel]* — Filtrar por hotel\n"
-    "  *resumen* — Resumen completo\n\n"
+    "  *resumen* — Resumen por hotel y prioridad\n\n"
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "Escriba *ayuda* para ver este menu"
 )
@@ -257,6 +257,155 @@ def prioridad_emoji(prioridad):
     elif prioridad == "Baja":
         return "🟢"
     return "⚪"
+
+
+PRIORIDAD_ORDEN = {"Alta": 0, "Media": 1, "Baja": 2, "Sin asignar": 3}
+ESTADO_ORDEN = {"Pendiente": 0, "En proceso": 1, "Resuelto": 2}
+
+
+def ordenar_tickets(tickets):
+    """Ordena: Pendientes primero, luego En proceso. Dentro de cada grupo, por prioridad descendente."""
+    return sorted(tickets, key=lambda t: (
+        ESTADO_ORDEN.get(t.get("estado", "Pendiente"), 9),
+        PRIORIDAD_ORDEN.get(t.get("prioridad", "Sin asignar"), 9)
+    ))
+
+
+def obtener_hoteles_activos():
+    """Obtiene la lista de hoteles con tickets pendientes/en proceso."""
+    tickets = buscar_tickets_pendientes()
+    hoteles = {}
+    for t in tickets:
+        h = t.get("hotel", "Sin especificar")
+        if h not in hoteles:
+            hoteles[h] = {"pendientes": 0, "en_proceso": 0, "tickets": []}
+        if t["estado"] == "Pendiente":
+            hoteles[h]["pendientes"] += 1
+        else:
+            hoteles[h]["en_proceso"] += 1
+        hoteles[h]["tickets"].append(t)
+    return hoteles
+
+
+def enviar_resumen_interactivo():
+    """Muestra lista de hoteles para que el admin elija cual ver."""
+    hoteles = obtener_hoteles_activos()
+    if not hoteles:
+        enviar_mensaje(ADMIN_PHONE, "✅ *No hay tickets abiertos.* ¡Todo al dia!")
+        return
+    # Preparar filas para la lista
+    rows = []
+    rows.append({
+        "id": "resumen_todos",
+        "title": "📊 Todos los hoteles",
+        "description": f"{sum(h['pendientes'] + h['en_proceso'] for h in hoteles.values())} tickets abiertos"
+    })
+    for nombre, data in hoteles.items():
+        total = data["pendientes"] + data["en_proceso"]
+        desc = f"🟡 {data['pendientes']} pend. · 🔵 {data['en_proceso']} en proc."
+        rows.append({
+            "id": f"resumen_{nombre[:50]}",
+            "title": nombre[:24],
+            "description": desc[:72]
+        })
+    # Max 10 rows en lista
+    enviar_lista(
+        ADMIN_PHONE,
+        f"📊 *RESUMEN DE TICKETS*\n"
+        f"*{hora_peru().strftime('%d/%m/%Y · %H:%M')}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📋 *{sum(h['pendientes'] + h['en_proceso'] for h in hoteles.values())} ticket(s) abierto(s)*\n"
+        f"en *{len(hoteles)} hotel(es)*\n\n"
+        f"Seleccione un hotel para ver sus tickets ordenados por prioridad.",
+        "🏨 Elegir hotel",
+        [{"title": "Hoteles", "rows": rows[:10]}],
+        texto_footer="Ordenados por prioridad"
+    )
+
+
+def enviar_resumen_hotel(nombre_hotel):
+    """Muestra tickets de un hotel ordenados por estado y prioridad."""
+    hoteles = obtener_hoteles_activos()
+    if nombre_hotel == "todos":
+        # Mostrar todos los hoteles
+        todos_tickets = []
+        for data in hoteles.values():
+            todos_tickets.extend(data["tickets"])
+        if not todos_tickets:
+            enviar_mensaje(ADMIN_PHONE, "✅ *No hay tickets abiertos.* ¡Todo al dia!")
+            return
+        tickets_ordenados = ordenar_tickets(todos_tickets)
+        # Agrupar por hotel manteniendo el orden
+        hoteles_ordenados = {}
+        for t in tickets_ordenados:
+            h = t.get("hotel", "Sin especificar")
+            if h not in hoteles_ordenados:
+                hoteles_ordenados[h] = []
+            hoteles_ordenados[h].append(t)
+        ahora = hora_peru()
+        mensaje = (
+            f"📊 *RESUMEN COMPLETO*\n"
+            f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📋 *{len(todos_tickets)} ticket(s) abierto(s)*\n\n"
+        )
+        for hotel, tks in hoteles_ordenados.items():
+            pendientes = sum(1 for t in tks if t["estado"] == "Pendiente")
+            en_proc = sum(1 for t in tks if t["estado"] == "En proceso")
+            mensaje += (
+                f"🏨 *{hotel}* — 🟡 {pendientes} · 🔵 {en_proc}\n"
+                f"─────────────────────\n"
+            )
+            for t in tks:
+                e_emoji = estado_emoji(t["estado"])
+                p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+                mensaje += (
+                    f"  {e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']} · {t.get('prioridad', 'Sin asignar')}\n"
+                    f"     📞 {formatear_telefono(t['telefono'])}\n"
+                    f"     📝 {t['descripcion']}\n\n"
+                )
+        enviar_mensaje(ADMIN_PHONE, mensaje)
+    else:
+        # Buscar hotel especifico
+        hotel_encontrado = None
+        tickets_hotel = []
+        for nombre, data in hoteles.items():
+            if nombre.lower() == nombre_hotel.lower() or nombre_hotel.lower() in nombre.lower():
+                hotel_encontrado = nombre
+                tickets_hotel = data["tickets"]
+                break
+        if not tickets_hotel:
+            enviar_mensaje(ADMIN_PHONE, f"✅ *No hay tickets pendientes* para: _{nombre_hotel}_")
+            return
+        tickets_ordenados = ordenar_tickets(tickets_hotel)
+        pendientes = sum(1 for t in tickets_ordenados if t["estado"] == "Pendiente")
+        en_proc = sum(1 for t in tickets_ordenados if t["estado"] == "En proceso")
+        ahora = hora_peru()
+        mensaje = (
+            f"🏨 *{hotel_encontrado}*\n"
+            f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📋 *{len(tickets_ordenados)} ticket(s) abierto(s)*\n"
+            f"  🟡 Pendientes: *{pendientes}*\n"
+            f"  🔵 En proceso: *{en_proc}*\n\n"
+            f"─────────────────────\n\n"
+        )
+        for t in tickets_ordenados:
+            e_emoji = estado_emoji(t["estado"])
+            p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+            mensaje += (
+                f"{e_emoji}{p_emoji} *Ticket #{t['numero']}* · {t.get('prioridad', 'Sin asignar')}\n"
+                f"  📞 {formatear_telefono(t['telefono'])}\n"
+                f"  🕐 {t['fecha']}\n"
+                f"  📝 {t['descripcion']}\n\n"
+            )
+        mensaje += (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ Responder: *R[#] [mensaje]*\n"
+            f"⚡ Estado: *E[#] [estado]*\n"
+            f"⚡ Prioridad: *P[#] [prioridad]*"
+        )
+        enviar_mensaje(ADMIN_PHONE, mensaje)
 
 
 # ============================================
@@ -712,42 +861,9 @@ def procesar_imagen(telefono, mensaje, tipo_proceso):
 # ============================================
 
 def enviar_resumen_diario():
+    """Resumen automatico de las 7am - muestra todo ordenado por prioridad."""
     try:
-        ahora = hora_peru()
-        tickets = buscar_tickets_pendientes()
-        pendientes = [t for t in tickets if t["estado"] == "Pendiente"]
-        en_proceso = [t for t in tickets if t["estado"] == "En proceso"]
-        mensaje = (
-            f"📊 *RESUMEN DE TICKETS*\n"
-            f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        )
-        if not tickets:
-            mensaje += "✅ *No hay tickets abiertos.* ¡Todo al dia!"
-        else:
-            mensaje += (
-                f"📋 *{len(tickets)} ticket(s) abierto(s)*\n\n"
-                f"  🟡 Pendientes: *{len(pendientes)}*\n"
-                f"  🔵 En proceso: *{len(en_proceso)}*\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            )
-            hoteles = {}
-            for t in tickets:
-                h = t.get("hotel", "Sin especificar")
-                if h not in hoteles:
-                    hoteles[h] = []
-                hoteles[h].append(t)
-            for hotel, tks in hoteles.items():
-                mensaje += f"🏨 *{hotel}* — {len(tks)} ticket(s)\n─────────────────────\n"
-                for t in tks:
-                    e_emoji = estado_emoji(t["estado"])
-                    p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
-                    mensaje += (
-                        f"  {e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']}\n"
-                        f"     📞 {formatear_telefono(t['telefono'])}\n"
-                        f"     📝 {t['descripcion']}\n\n"
-                    )
-        notificar_admin(mensaje)
+        enviar_resumen_hotel("todos")
     except Exception as e:
         print(f"Error enviando resumen diario: {e}")
 
@@ -782,7 +898,7 @@ def procesar_comando_admin(texto_original):
         return
 
     if texto_lower == "resumen":
-        enviar_resumen_diario()
+        enviar_resumen_interactivo()
         return
 
     if texto_lower == "t":
@@ -1092,6 +1208,15 @@ def recibir_mensaje():
         if telefono == ADMIN_PHONE:
             if tipo_mensaje == "text":
                 procesar_comando_admin(texto_original)
+            elif tipo_mensaje == "interactive" and button_id:
+                # Handle interactive replies from admin (resumen hotel selection)
+                if button_id == "resumen_todos":
+                    enviar_resumen_hotel("todos")
+                elif button_id.startswith("resumen_"):
+                    hotel_seleccionado = button_id.replace("resumen_", "")
+                    enviar_resumen_hotel(hotel_seleccionado)
+                else:
+                    enviar_mensaje(ADMIN_PHONE, "⚠️ Use comandos de texto.\n\nEscriba *ayuda* para ver los comandos.")
             else:
                 enviar_mensaje(ADMIN_PHONE, "⚠️ Los comandos solo funcionan con texto.\n\nEscriba *ayuda* para ver los comandos.")
             return jsonify({"status": "ok"}), 200
