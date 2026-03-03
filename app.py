@@ -19,7 +19,7 @@ GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME", "Tickets IT Support")
 IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY", "")
 ADMIN_PHONE = os.environ.get("ADMIN_PHONE", "51994011725")
 
-TIEMPO_ESPERA = 10
+TIEMPO_RECORDATORIO = 60  # 1 minuto para recordar al cliente que presione Listo
 PERU_UTC_OFFSET = -5
 HORA_RESUMEN = 7
 
@@ -730,6 +730,8 @@ def procesar_nuevo_ticket(telefono):
     with buffer_lock:
         if telefono not in buffer_mensajes:
             return
+        if buffer_mensajes[telefono].get("timer"):
+            buffer_mensajes[telefono]["timer"].cancel()
         mensajes = buffer_mensajes[telefono]["mensajes"]
         imagenes = buffer_mensajes[telefono].get("imagenes", [])
         del buffer_mensajes[telefono]
@@ -783,6 +785,8 @@ def procesar_info_adicional(telefono):
     with buffer_lock:
         if telefono not in buffer_mensajes:
             return
+        if buffer_mensajes[telefono].get("timer"):
+            buffer_mensajes[telefono]["timer"].cancel()
         mensajes = buffer_mensajes[telefono]["mensajes"]
         imagenes = buffer_mensajes[telefono].get("imagenes", [])
         del buffer_mensajes[telefono]
@@ -823,19 +827,81 @@ def procesar_info_adicional(telefono):
     set_estado(telefono, "menu")
 
 
-def agregar_al_buffer(telefono, tipo_proceso, texto=None, imagen_link=None):
+def enviar_boton_listo(telefono, tipo_proceso):
+    """Envia el boton de Listo para que el cliente confirme que termino."""
+    if tipo_proceso == "nuevo":
+        enviar_botones(
+            telefono,
+            "📝 Cuando haya terminado de describir su problema, presione el boton.",
+            [
+                {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="Puede seguir enviando mensajes e imagenes"
+        )
+    else:
+        enviar_botones(
+            telefono,
+            "📝 Cuando haya terminado de agregar informacion, presione el boton.",
+            [
+                {"id": "btn_listo_info", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="Puede seguir enviando mensajes e imagenes"
+        )
+
+
+def recordar_boton_listo(telefono):
+    """Recordatorio despues de 1 minuto de inactividad."""
     with buffer_lock:
         if telefono not in buffer_mensajes:
-            buffer_mensajes[telefono] = {"mensajes": [], "imagenes": [], "timer": None, "tipo": tipo_proceso}
+            return
+        tipo = buffer_mensajes[telefono].get("tipo", "nuevo")
+        # Verificar que no se haya enviado ya un recordatorio
+        if buffer_mensajes[telefono].get("recordatorio_enviado"):
+            return
+        buffer_mensajes[telefono]["recordatorio_enviado"] = True
+    if tipo == "nuevo":
+        enviar_botones(
+            telefono,
+            "⏳ ¿Ya termino de describir su problema?\n\nSi ya agrego toda la informacion, presione *Listo* para crear su ticket.",
+            [
+                {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="O siga enviando mas detalles"
+        )
+    else:
+        enviar_botones(
+            telefono,
+            "⏳ ¿Ya termino de agregar informacion?\n\nSi ya agrego todo, presione *Listo* para actualizar su ticket.",
+            [
+                {"id": "btn_listo_info", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="O siga enviando mas detalles"
+        )
+
+
+def agregar_al_buffer(telefono, tipo_proceso, texto=None, imagen_link=None, enviar_boton=False):
+    with buffer_lock:
+        es_nuevo_buffer = telefono not in buffer_mensajes
+        if es_nuevo_buffer:
+            buffer_mensajes[telefono] = {"mensajes": [], "imagenes": [], "timer": None, "tipo": tipo_proceso, "recordatorio_enviado": False}
         if buffer_mensajes[telefono]["timer"]:
             buffer_mensajes[telefono]["timer"].cancel()
+        # Reset recordatorio flag cuando llega nuevo mensaje
+        buffer_mensajes[telefono]["recordatorio_enviado"] = False
         if texto:
             buffer_mensajes[telefono]["mensajes"].append(texto)
         if imagen_link:
             buffer_mensajes[telefono]["imagenes"].append(imagen_link)
-        callback = procesar_nuevo_ticket if tipo_proceso == "nuevo" else procesar_info_adicional
-        buffer_mensajes[telefono]["timer"] = threading.Timer(TIEMPO_ESPERA, callback, args=[telefono])
+        # Timer para recordatorio (no para crear ticket)
+        buffer_mensajes[telefono]["timer"] = threading.Timer(TIEMPO_RECORDATORIO, recordar_boton_listo, args=[telefono])
         buffer_mensajes[telefono]["timer"].start()
+    # Enviar boton listo en el primer mensaje
+    if enviar_boton:
+        enviar_boton_listo(telefono, tipo_proceso)
 
 
 def procesar_imagen(telefono, mensaje, tipo_proceso):
@@ -1284,22 +1350,23 @@ def recibir_mensaje():
                         "👋 *Bienvenido/a a IT Support and Services SAC*\n"
                         "━━━━━━━━━━━━━━━━━━━━\n\n"
                         "📝 Estamos registrando su reporte.\n\n"
-                        "Si desea agregar mas detalles o imagenes, envielos ahora.\n"
-                        "Su ticket se creara en unos segundos ⏳"
+                        "Envie todos los detalles que necesite: texto, imagenes, screenshots.\n"
+                        "Cuando termine, presione *Listo* para crear su ticket."
                     )
                     set_estado(telefono, "acumulando_nuevo")
-                    agregar_al_buffer(telefono, "nuevo", texto=texto_original)
+                    agregar_al_buffer(telefono, "nuevo", texto=texto_original, enviar_boton=True)
             elif tipo_mensaje == "image":
                 enviar_mensaje(
                     telefono,
                     "👋 *Bienvenido/a a IT Support and Services SAC*\n"
                     "━━━━━━━━━━━━━━━━━━━━\n\n"
                     "📝 Estamos registrando su reporte.\n\n"
-                    "Si desea agregar mas detalles o imagenes, envielos ahora.\n"
-                    "Su ticket se creara en unos segundos ⏳"
+                    "Envie todos los detalles que necesite: texto, imagenes, screenshots.\n"
+                    "Cuando termine, presione *Listo* para crear su ticket."
                 )
                 set_estado(telefono, "acumulando_nuevo")
                 procesar_imagen(telefono, mensaje, "nuevo")
+                enviar_boton_listo(telefono, "nuevo")
             elif tipo_mensaje == "interactive":
                 if button_id == "menu_nuevo":
                     enviar_mensaje(
@@ -1309,8 +1376,9 @@ def recibir_mensaje():
                         "Describanos el problema o consulta.\n\n"
                         "📝 Puede enviar texto\n"
                         "📸 Puede enviar imagenes/screenshots\n\n"
+                        "Cuando termine, presione *Listo* para crear su ticket.\n\n"
                         "━━━━━━━━━━━━━━━━━━━━\n"
-                        "_Escriba *menu* para volver_"
+                        "_Escriba *menu* para cancelar_"
                     )
                     set_estado(telefono, "esperando_problema")
                 elif button_id == "menu_consultar":
@@ -1333,8 +1401,9 @@ def recibir_mensaje():
                     "Describanos el problema o consulta.\n\n"
                     "📝 Puede enviar texto\n"
                     "📸 Puede enviar imagenes/screenshots\n\n"
+                    "Cuando termine, presione *Listo* para crear su ticket.\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
-                    "_Escriba *menu* para volver_"
+                    "_Escriba *menu* para cancelar_"
                 )
                 set_estado(telefono, "esperando_problema")
             elif button_id == "menu_consultar" or texto == "2":
@@ -1352,16 +1421,22 @@ def recibir_mensaje():
                 return jsonify({"status": "ok"}), 200
             set_estado(telefono, "acumulando_nuevo")
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "nuevo", texto=texto_original)
+                agregar_al_buffer(telefono, "nuevo", texto=texto_original, enviar_boton=True)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "nuevo")
+                enviar_boton_listo(telefono, "nuevo")
             else:
                 enviar_mensaje(telefono, "⚠️ Solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # ── Acumulando mensajes para nuevo ticket ──
         if estado == "acumulando_nuevo":
-            if texto == "menu":
+            # Boton Listo → crear ticket
+            if button_id == "btn_listo_nuevo":
+                procesar_nuevo_ticket(telefono)
+                return jsonify({"status": "ok"}), 200
+            # Cancelar
+            if texto == "menu" or button_id == "btn_cancelar":
                 with buffer_lock:
                     if telefono in buffer_mensajes:
                         if buffer_mensajes[telefono]["timer"]:
@@ -1371,6 +1446,7 @@ def recibir_mensaje():
                 enviar_menu_principal(telefono)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
+            # Seguir acumulando
             if tipo_mensaje == "text":
                 agregar_al_buffer(telefono, "nuevo", texto=texto_original)
             elif tipo_mensaje == "image":
@@ -1410,6 +1486,7 @@ def recibir_mensaje():
                     "Envie la informacion adicional.\n\n"
                     "📝 Puede enviar texto\n"
                     "📸 Puede enviar imagenes/screenshots\n\n"
+                    "Cuando termine, presione *Listo*.\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     "_Escriba *menu* para cancelar_"
                 )
@@ -1429,16 +1506,22 @@ def recibir_mensaje():
                 return jsonify({"status": "ok"}), 200
             set_estado(telefono, "acumulando_info")
             if tipo_mensaje == "text":
-                agregar_al_buffer(telefono, "info", texto=texto_original)
+                agregar_al_buffer(telefono, "info", texto=texto_original, enviar_boton=True)
             elif tipo_mensaje == "image":
                 procesar_imagen(telefono, mensaje, "info")
+                enviar_boton_listo(telefono, "info")
             else:
                 enviar_mensaje(telefono, "⚠️ Solo podemos recibir texto e imagenes.")
             return jsonify({"status": "ok"}), 200
 
         # ── Acumulando info adicional ──
         if estado == "acumulando_info":
-            if texto == "menu":
+            # Boton Listo → actualizar ticket
+            if button_id == "btn_listo_info":
+                procesar_info_adicional(telefono)
+                return jsonify({"status": "ok"}), 200
+            # Cancelar
+            if texto == "menu" or button_id == "btn_cancelar":
                 with buffer_lock:
                     if telefono in buffer_mensajes:
                         if buffer_mensajes[telefono]["timer"]:
@@ -1448,6 +1531,7 @@ def recibir_mensaje():
                 enviar_menu_principal(telefono)
                 set_estado(telefono, "menu")
                 return jsonify({"status": "ok"}), 200
+            # Seguir acumulando
             if tipo_mensaje == "text":
                 agregar_al_buffer(telefono, "info", texto=texto_original)
             elif tipo_mensaje == "image":
