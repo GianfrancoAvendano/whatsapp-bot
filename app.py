@@ -89,9 +89,9 @@ MENU_ASISTENTE = (
     "⚙️ *PANEL DE ASISTENTE*\n"
     "*IT Support and Services SAC*\n"
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "📨 *RESPONDER*\n"
+    "📨 *PROPONER RESPUESTA*\n"
     "  *R[#] [mensaje]*\n"
-    "  _Ej: R24 Estamos revisando su caso_\n\n"
+    "  _Se envia al admin para revision_\n\n"
     "📊 *CAMBIAR ESTADO*\n"
     "  *E[#] [estado]*\n"
     "  _Estados: Pendiente · En proceso · Resuelto_\n\n"
@@ -440,10 +440,12 @@ def enviar_resumen_hotel(nombre_hotel):
             for t in tks:
                 e_emoji = estado_emoji(t["estado"])
                 p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+                asig = asignado_texto(t.get("asignado", ""))
+                asig_line = f"\n     {asig}" if asig else ""
                 mensaje += (
                     f"  {e_emoji}{p_emoji} *#{t['numero']}* · {t['estado']} · {t.get('prioridad', 'Sin asignar')}\n"
                     f"     📞 {formatear_telefono(t['telefono'])}\n"
-                    f"     📝 {t['descripcion']}\n\n"
+                    f"     📝 {t['descripcion']}{asig_line}\n\n"
                 )
         enviar_mensaje(ADMIN_PHONE, mensaje)
     else:
@@ -474,11 +476,13 @@ def enviar_resumen_hotel(nombre_hotel):
         for t in tickets_ordenados:
             e_emoji = estado_emoji(t["estado"])
             p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+            asig = asignado_texto(t.get("asignado", ""))
+            asig_line = f"\n  {asig}" if asig else ""
             mensaje += (
                 f"{e_emoji}{p_emoji} *Ticket #{t['numero']}* · {t.get('prioridad', 'Sin asignar')}\n"
                 f"  📞 {formatear_telefono(t['telefono'])}\n"
                 f"  🕐 {t['fecha']}\n"
-                f"  📝 {t['descripcion']}\n\n"
+                f"  📝 {t['descripcion']}{asig_line}\n\n"
             )
         mensaje += (
             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1488,16 +1492,18 @@ def procesar_comando_asistente(texto_original, telefono):
             mensaje_respuesta = partes[1].strip()
             ticket = obtener_ticket(numero)
             if ticket:
+                # Enviar al admin para revision, NO al cliente
                 enviar_mensaje(
-                    ticket["telefono"],
-                    f"💬 *Respuesta — Ticket #{ticket['numero']}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{mensaje_respuesta}\n\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"*IT Support and Services SAC*"
+                    ADMIN_PHONE,
+                    f"💬 *{nombre} propone respuesta — Ticket #{numero}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🏨 {ticket.get('hotel', '')} · 📞 {formatear_telefono(ticket['telefono'])}\n\n"
+                    f"📝 *Mensaje propuesto:*\n{mensaje_respuesta}\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Para enviar al cliente:\n"
+                    f"  *R{numero} {mensaje_respuesta}*"
                 )
-                agregar_info_a_ticket(numero, f"[RESPUESTA {nombre.upper()}] {mensaje_respuesta}")
-                enviar_mensaje(telefono, f"✅ *Respuesta enviada*\n  📨 Ticket *#{numero}* · 🏨 {ticket.get('hotel', '')}")
+                enviar_mensaje(telefono, f"📤 *Respuesta enviada al administrador para revision*\n  📨 Ticket *#{numero}* · 🏨 {ticket.get('hotel', '')}")
             else:
                 enviar_mensaje(telefono, f"❌ No se encontro el ticket *#{numero}*")
         except:
