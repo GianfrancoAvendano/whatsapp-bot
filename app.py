@@ -1650,12 +1650,30 @@ def recibir_mensaje():
         entry = body.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
+
+        # ── FILTRO 1: Ignorar notificaciones de estado (entregado, leido, etc) ──
+        if "statuses" in value:
+            return jsonify({"status": "ok"}), 200
+
+        # Ignorar si no hay campo messages
+        if "messages" not in value:
+            return jsonify({"status": "ok"}), 200
+
         messages = value.get("messages", [])
         if not messages:
             return jsonify({"status": "ok"}), 200
         mensaje = messages[0]
         telefono = mensaje.get("from", "")
         tipo_mensaje = mensaje.get("type", "")
+
+        # ── FILTRO 2: Solo procesar tipos de mensaje validos ──
+        if tipo_mensaje not in ["text", "image", "interactive"]:
+            print(f"[IGNORADO] Tipo: {tipo_mensaje} de {telefono}")
+            return jsonify({"status": "ok"}), 200
+
+        # ── FILTRO 3: Ignorar mensajes sin contenido real ──
+        if not telefono:
+            return jsonify({"status": "ok"}), 200
 
         texto = ""
         texto_original = ""
@@ -1664,6 +1682,8 @@ def recibir_mensaje():
         if tipo_mensaje == "text":
             texto_original = mensaje.get("text", {}).get("body", "").strip()
             texto = texto_original.lower()
+            if not texto_original:
+                return jsonify({"status": "ok"}), 200
         elif tipo_mensaje == "interactive":
             interactive = mensaje.get("interactive", {})
             interactive_type = interactive.get("type", "")
@@ -1675,6 +1695,10 @@ def recibir_mensaje():
                 button_id = interactive.get("list_reply", {}).get("id", "")
                 texto_original = interactive.get("list_reply", {}).get("title", "")
                 texto = button_id
+            if not button_id:
+                return jsonify({"status": "ok"}), 200
+
+        print(f"[MENSAJE] Tipo: {tipo_mensaje} | De: {telefono} | Texto: {texto_original[:50] if texto_original else '(vacio)'}")
 
         # ============================================
         # ADMIN
