@@ -40,6 +40,7 @@ HORA_RESUMEN = 7
 
 conversaciones = {}
 buffer_mensajes = {}
+admin_estado = {}  # {"accion": "respondiendo", "ticket": "24"}
 buffer_lock = threading.Lock()
 hotel_cache = {}
 
@@ -306,6 +307,25 @@ def enviar_botones_post_accion(telefono):
         [
             {"id": "menu_nuevo", "title": "🛠️ Nuevo reporte"},
             {"id": "menu_consultar", "title": "🔍 Consultar ticket"},
+            {"id": "finalizar", "title": "✅ Eso es todo"},
+        ],
+        texto_footer="Seleccione una opcion"
+    )
+
+
+def enviar_botones_post_respuesta(telefono, numero_ticket):
+    """Botones que aparecen despues de que el admin responde al cliente."""
+    # Guardar ticket actual para que pueda agregar info
+    if telefono not in conversaciones:
+        conversaciones[telefono] = {}
+    conversaciones[telefono]["ticket_actual"] = str(numero_ticket)
+    set_estado(telefono, "viendo_ticket")
+    enviar_botones(
+        telefono,
+        f"📋 Ticket *#{numero_ticket}*\n¿Desea agregar mas informacion o realizar otra accion?",
+        [
+            {"id": "vticket_agregar", "title": "✏️ Agregar info"},
+            {"id": "vticket_menu", "title": "📋 Menu principal"},
             {"id": "finalizar", "title": "✅ Eso es todo"},
         ],
         texto_footer="Seleccione una opcion"
@@ -942,12 +962,9 @@ def procesar_nuevo_ticket(telefono):
             f"🕐 {hora_peru().strftime('%d/%m/%Y %H:%M')}\n\n"
             f"📝 *Descripcion:*\n{resumen}{img_admin}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Total pendientes: *{len(pendientes)}*\n\n"
-            f"⚡ *Acciones rapidas:*\n"
-            f"  *R{numero_ticket}* [mensaje] → Responder\n"
-            f"  *E{numero_ticket}* En proceso → Estado\n"
-            f"  *P{numero_ticket}* Alta → Prioridad"
+            f"📊 Total pendientes: *{len(pendientes)}*"
         )
+        enviar_botones_accion_admin(numero_ticket)
     else:
         enviar_mensaje(
             telefono,
@@ -1001,10 +1018,9 @@ def procesar_info_adicional(telefono):
             f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🏨 {hotel}\n"
             f"📞 {formatear_telefono(telefono)}\n\n"
-            f"📝 *Info nueva:*\n{nueva_info[:200]}{img_admin}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚡ Responder: *R{ticket_actual}* [mensaje]"
+            f"📝 *Info nueva:*\n{nueva_info[:200]}{img_admin}"
         )
+        enviar_botones_accion_admin(ticket_actual)
     else:
         enviar_mensaje(telefono, f"❌ No se pudo agregar la informacion al ticket #{ticket_actual}.")
     set_estado(telefono, "menu")
@@ -1158,18 +1174,71 @@ def enviar_detalle_ticket_admin(destinatario, ticket):
     )
     if ticket.get("imagenes"):
         detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
-    detalle += (
-        f"\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *Acciones rapidas:*\n"
-        f"  *R{ticket['numero']}* [mensaje] → Responder\n"
-        f"  *E{ticket['numero']}* [estado] → Cambiar estado"
-    )
-    if destinatario == ADMIN_PHONE:
-        detalle += (
-            f"\n  *P{ticket['numero']}* [prioridad] → Prioridad\n"
-            f"  *A{ticket['numero']}* → Asignar a asistente"
-        )
     enviar_mensaje(destinatario, detalle)
+    # Mostrar botones de accion para admin
+    if destinatario == ADMIN_PHONE:
+        enviar_botones_accion_admin(ticket["numero"])
+    else:
+        # Asistentes ven texto con comandos
+        enviar_mensaje(
+            destinatario,
+            f"⚡ *Acciones:*\n"
+            f"  *R{ticket['numero']}* [mensaje] → Proponer respuesta\n"
+            f"  *E{ticket['numero']}* [estado] → Cambiar estado\n"
+            f"  *V{ticket['numero']}* → Ver detalle"
+        )
+
+
+def enviar_botones_accion_admin(numero_ticket):
+    """Muestra botones de accion para un ticket al admin."""
+    enviar_botones(
+        ADMIN_PHONE,
+        f"⚡ *Acciones — Ticket #{numero_ticket}*",
+        [
+            {"id": f"adm_resp_{numero_ticket}", "title": "📨 Responder"},
+            {"id": f"adm_estado_{numero_ticket}", "title": "📊 Estado"},
+            {"id": f"adm_mas_{numero_ticket}", "title": "⚙️ Mas opciones"},
+        ],
+        texto_footer="Seleccione una accion"
+    )
+
+
+def enviar_lista_estado_admin(numero_ticket):
+    """Muestra lista de estados para cambiar un ticket."""
+    enviar_lista(
+        ADMIN_PHONE,
+        f"📊 *Cambiar estado — Ticket #{numero_ticket}*\n\nSeleccione el nuevo estado:",
+        "📊 Elegir estado",
+        [{
+            "title": "Estados",
+            "rows": [
+                {"id": f"adm_e_{numero_ticket}_pendiente", "title": "🟡 Pendiente"},
+                {"id": f"adm_e_{numero_ticket}_enproceso", "title": "🔵 En proceso"},
+                {"id": f"adm_e_{numero_ticket}_resuelto", "title": "🟢 Resuelto"},
+            ]
+        }]
+    )
+
+
+def enviar_lista_mas_opciones_admin(numero_ticket):
+    """Muestra lista con prioridad y asignacion."""
+    rows = [
+        {"id": f"adm_p_{numero_ticket}_alta", "title": "🔴 Prioridad Alta"},
+        {"id": f"adm_p_{numero_ticket}_media", "title": "🟠 Prioridad Media"},
+        {"id": f"adm_p_{numero_ticket}_baja", "title": "🟢 Prioridad Baja"},
+    ]
+    if len(ASSISTANTS) == 1:
+        tel = list(ASSISTANTS.keys())[0]
+        nombre = ASSISTANTS[tel]
+        rows.append({"id": f"asignar_{numero_ticket}_{tel}", "title": f"👤 Asignar a {nombre}"[:24]})
+    elif len(ASSISTANTS) > 1:
+        rows.append({"id": f"adm_asignar_{numero_ticket}", "title": "👤 Asignar a..."})
+    enviar_lista(
+        ADMIN_PHONE,
+        f"⚙️ *Opciones — Ticket #{numero_ticket}*\n\nSeleccione una accion:",
+        "⚙️ Ver opciones",
+        [{"title": "Prioridad y asignacion", "rows": rows}]
+    )
 
 
 # ============================================
@@ -1252,6 +1321,23 @@ def procesar_comando_admin(texto_original):
                     f"     📝 {t['descripcion']}{asig_line}\n\n"
                 )
         enviar_mensaje(ADMIN_PHONE, lista)
+        # Lista interactiva para seleccionar ticket
+        rows = []
+        for t in tickets[:10]:
+            e = estado_emoji(t["estado"])
+            p = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+            rows.append({
+                "id": f"adm_ver_{t['numero']}",
+                "title": f"{e}{p} Ticket #{t['numero']}"[:24],
+                "description": f"{t.get('hotel', '')} · {t['descripcion'][:40]}"[:72]
+            })
+        if rows:
+            enviar_lista(
+                ADMIN_PHONE,
+                "Seleccione un ticket para ver opciones:",
+                "📋 Seleccionar ticket",
+                [{"title": "Tickets abiertos", "rows": rows}]
+            )
         return
 
     if texto_lower.startswith("h "):
@@ -1308,6 +1394,8 @@ def procesar_comando_admin(texto_original):
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"*IT Support and Services SAC*"
                 )
+                # Mostrar botones al cliente para que pueda continuar
+                enviar_botones_post_respuesta(ticket["telefono"], ticket["numero"])
                 agregar_info_a_ticket(numero, f"[RESPUESTA ADMIN] {mensaje_respuesta}")
                 enviar_mensaje(ADMIN_PHONE, f"✅ *Respuesta enviada*\n  📨 Ticket *#{numero}* · 🏨 {ticket.get('hotel', '')}")
             else:
@@ -1704,27 +1792,149 @@ def recibir_mensaje():
         # ADMIN
         # ============================================
         if telefono == ADMIN_PHONE:
-            if tipo_mensaje == "text":
-                procesar_comando_admin(texto_original)
-            elif tipo_mensaje == "interactive" and button_id:
-                if button_id == "resumen_todos":
-                    enviar_resumen_hotel("todos")
-                elif button_id.startswith("resumen_"):
-                    hotel_seleccionado = button_id.replace("resumen_", "")
-                    enviar_resumen_hotel(hotel_seleccionado)
+            # ── Admin en modo respuesta (esperando texto para enviar a cliente) ──
+            if admin_estado.get("accion") == "respondiendo" and tipo_mensaje == "text":
+                if texto == "cancelar":
+                    admin_estado.clear()
+                    enviar_mensaje(ADMIN_PHONE, "🚫 Respuesta cancelada.")
+                    return jsonify({"status": "ok"}), 200
+                ticket_num = admin_estado.get("ticket")
+                admin_estado.clear()
+                ticket = obtener_ticket(ticket_num)
+                if ticket:
+                    enviar_mensaje(
+                        ticket["telefono"],
+                        f"💬 *Respuesta — Ticket #{ticket['numero']}*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"{texto_original}\n\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"*IT Support and Services SAC*"
+                    )
+                    enviar_botones_post_respuesta(ticket["telefono"], ticket["numero"])
+                    agregar_info_a_ticket(ticket_num, f"[RESPUESTA ADMIN] {texto_original}")
+                    enviar_mensaje(ADMIN_PHONE, f"✅ *Respuesta enviada*\n  📨 Ticket *#{ticket_num}* · 🏨 {ticket.get('hotel', '')}")
+                else:
+                    enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{ticket_num}*")
+                return jsonify({"status": "ok"}), 200
+
+            # ── Botones interactivos del admin ──
+            if tipo_mensaje == "interactive" and button_id:
+                # Si estaba en modo respuesta, cancelar
+                if admin_estado.get("accion"):
+                    admin_estado.clear()
+                # Responder ticket
+                if button_id.startswith("adm_resp_"):
+                    ticket_num = button_id.replace("adm_resp_", "")
+                    admin_estado["accion"] = "respondiendo"
+                    admin_estado["ticket"] = ticket_num
+                    enviar_mensaje(
+                        ADMIN_PHONE,
+                        f"📨 *Responder — Ticket #{ticket_num}*\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"Escriba su respuesta ahora.\n"
+                        f"El siguiente mensaje que envie se enviara al cliente.\n\n"
+                        f"_Escriba *cancelar* para cancelar_"
+                    )
+                # Estado
+                elif button_id.startswith("adm_estado_"):
+                    ticket_num = button_id.replace("adm_estado_", "")
+                    enviar_lista_estado_admin(ticket_num)
+                elif button_id.startswith("adm_e_"):
+                    # adm_e_[ticket]_[estado]
+                    partes = button_id.replace("adm_e_", "").rsplit("_", 1)
+                    if len(partes) == 2:
+                        ticket_num, estado_key = partes
+                        mapa_estado = {"pendiente": "Pendiente", "enproceso": "En proceso", "resuelto": "Resuelto"}
+                        nuevo_estado = mapa_estado.get(estado_key)
+                        if nuevo_estado:
+                            ticket = obtener_ticket(ticket_num)
+                            if ticket and cambiar_estado_ticket(ticket_num, nuevo_estado):
+                                e_emoji = estado_emoji(nuevo_estado)
+                                msg = f"{e_emoji} *Estado actualizado*\n  📊 Ticket *#{ticket_num}* → *{nuevo_estado}*"
+                                if nuevo_estado == "Resuelto":
+                                    t2 = obtener_ticket(ticket_num)
+                                    if t2 and t2.get("tiempo_resolucion"):
+                                        msg += f"\n  ⏱️ Tiempo: *{t2['tiempo_resolucion']}*"
+                                enviar_mensaje(ADMIN_PHONE, msg)
+                                asignado = ticket.get("asignado", "")
+                                if es_asistente(asignado):
+                                    enviar_mensaje(asignado, msg)
+                                enviar_mensaje(
+                                    ticket["telefono"],
+                                    f"📋 *Actualizacion — Ticket #{ticket_num}*\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                                    f"Su ticket ha sido actualizado a: *{nuevo_estado}*\n\n"
+                                    f"Gracias por su paciencia 🙏\n\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                                    f"*IT Support and Services SAC*"
+                                )
+                            else:
+                                enviar_mensaje(ADMIN_PHONE, f"❌ Error con ticket *#{ticket_num}*")
+                # Mas opciones
+                elif button_id.startswith("adm_mas_"):
+                    ticket_num = button_id.replace("adm_mas_", "")
+                    enviar_lista_mas_opciones_admin(ticket_num)
+                elif button_id.startswith("adm_asignar_"):
+                    # Multi-asistente: mostrar lista
+                    ticket_num = button_id.replace("adm_asignar_", "")
+                    ticket = obtener_ticket(ticket_num)
+                    if ticket:
+                        rows = []
+                        for tel, nombre in ASSISTANTS.items():
+                            rows.append({
+                                "id": f"asignar_{ticket_num}_{tel}",
+                                "title": nombre[:24],
+                                "description": f"Tel: +{tel}"[:72]
+                            })
+                        enviar_lista(
+                            ADMIN_PHONE,
+                            f"👤 *Asignar Ticket #{ticket_num}*\n\nSeleccione a quien asignar:",
+                            "👤 Elegir asistente",
+                            [{"title": "Asistentes", "rows": rows[:10]}]
+                        )
+                # Prioridad
+                elif button_id.startswith("adm_p_"):
+                    partes = button_id.replace("adm_p_", "").rsplit("_", 1)
+                    if len(partes) == 2:
+                        ticket_num, prio_key = partes
+                        mapa_prio = {"alta": "Alta", "media": "Media", "baja": "Baja"}
+                        nueva_prio = mapa_prio.get(prio_key)
+                        if nueva_prio and cambiar_prioridad_ticket(ticket_num, nueva_prio):
+                            p_emoji = prioridad_emoji(nueva_prio)
+                            enviar_mensaje(ADMIN_PHONE, f"{p_emoji} *Prioridad actualizada*\n  🎯 Ticket *#{ticket_num}* → *{nueva_prio}*")
+                        else:
+                            enviar_mensaje(ADMIN_PHONE, f"❌ Error con ticket *#{ticket_num}*")
+                # Asignar (existente)
                 elif button_id.startswith("asignar_"):
-                    # asignar_[ticket]_[telefono]
                     partes = button_id.split("_", 2)
                     if len(partes) == 3:
-                        num_ticket = partes[1]
-                        tel_asistente = partes[2]
-                        completar_asignacion(num_ticket, tel_asistente)
+                        completar_asignacion(partes[1], partes[2])
                     else:
                         enviar_mensaje(ADMIN_PHONE, "❌ Error en la asignacion.")
+                # Resumen
+                elif button_id == "resumen_todos":
+                    enviar_resumen_hotel("todos")
+                elif button_id.startswith("resumen_"):
+                    enviar_resumen_hotel(button_id.replace("resumen_", ""))
+                # Ver ticket desde lista
+                elif button_id.startswith("adm_ver_"):
+                    ticket_num = button_id.replace("adm_ver_", "")
+                    ticket = obtener_ticket(ticket_num)
+                    if ticket:
+                        enviar_detalle_ticket_admin(ADMIN_PHONE, ticket)
+                    else:
+                        enviar_mensaje(ADMIN_PHONE, f"❌ No se encontro el ticket *#{ticket_num}*")
                 else:
-                    enviar_mensaje(ADMIN_PHONE, "⚠️ Use comandos de texto.\n\nEscriba *ayuda* para ver los comandos.")
-            else:
-                enviar_mensaje(ADMIN_PHONE, "⚠️ Los comandos solo funcionan con texto.\n\nEscriba *ayuda* para ver los comandos.")
+                    enviar_mensaje(ADMIN_PHONE, "⚠️ Opcion no reconocida.")
+                return jsonify({"status": "ok"}), 200
+
+            # ── Texto: comandos manuales (siguen funcionando) ──
+            if tipo_mensaje == "text":
+                procesar_comando_admin(texto_original)
+                return jsonify({"status": "ok"}), 200
+
+            # Imagen u otro tipo
+            enviar_mensaje(ADMIN_PHONE, "⚠️ Use comandos de texto o botones.\n\nEscriba *ayuda* para ver los comandos.")
             return jsonify({"status": "ok"}), 200
 
         # ============================================
