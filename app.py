@@ -428,7 +428,6 @@ def enviar_resumen_hotel(nombre_hotel):
     """Muestra tickets de un hotel ordenados por estado y prioridad."""
     hoteles = obtener_hoteles_activos()
     if nombre_hotel == "todos":
-        # Mostrar todos los hoteles
         todos_tickets = []
         for data in hoteles.values():
             todos_tickets.extend(data["tickets"])
@@ -436,7 +435,6 @@ def enviar_resumen_hotel(nombre_hotel):
             enviar_mensaje(ADMIN_PHONE, "✅ *No hay tickets abiertos.* ¡Todo al dia!")
             return
         tickets_ordenados = ordenar_tickets(todos_tickets)
-        # Agrupar por hotel manteniendo el orden
         hoteles_ordenados = {}
         for t in tickets_ordenados:
             h = t.get("hotel", "Sin especificar")
@@ -468,8 +466,8 @@ def enviar_resumen_hotel(nombre_hotel):
                     f"     📝 {t['descripcion']}{asig_line}\n\n"
                 )
         enviar_mensaje(ADMIN_PHONE, mensaje)
+        enviar_lista_seleccion_ticket(tickets_ordenados)
     else:
-        # Buscar hotel especifico
         hotel_encontrado = None
         tickets_hotel = []
         for nombre, data in hoteles.items():
@@ -504,13 +502,28 @@ def enviar_resumen_hotel(nombre_hotel):
                 f"  🕐 {t['fecha']}\n"
                 f"  📝 {t['descripcion']}{asig_line}\n\n"
             )
-        mensaje += (
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚡ Responder: *R[#] [mensaje]*\n"
-            f"⚡ Estado: *E[#] [estado]*\n"
-            f"⚡ Prioridad: *P[#] [prioridad]*"
-        )
         enviar_mensaje(ADMIN_PHONE, mensaje)
+        enviar_lista_seleccion_ticket(tickets_ordenados)
+
+
+def enviar_lista_seleccion_ticket(tickets):
+    """Muestra lista interactiva para seleccionar un ticket y ver sus opciones."""
+    rows = []
+    for t in tickets[:10]:
+        e = estado_emoji(t["estado"])
+        p = prioridad_emoji(t.get("prioridad", "Sin asignar"))
+        rows.append({
+            "id": f"adm_ver_{t['numero']}",
+            "title": f"{e}{p} Ticket #{t['numero']}"[:24],
+            "description": f"{t.get('hotel', '')} · {t['descripcion'][:40]}"[:72]
+        })
+    if rows:
+        enviar_lista(
+            ADMIN_PHONE,
+            "Seleccione un ticket para ver opciones:",
+            "📋 Seleccionar ticket",
+            [{"title": "Tickets abiertos", "rows": rows}]
+        )
 
 
 # ============================================
@@ -1321,23 +1334,7 @@ def procesar_comando_admin(texto_original):
                     f"     📝 {t['descripcion']}{asig_line}\n\n"
                 )
         enviar_mensaje(ADMIN_PHONE, lista)
-        # Lista interactiva para seleccionar ticket
-        rows = []
-        for t in tickets[:10]:
-            e = estado_emoji(t["estado"])
-            p = prioridad_emoji(t.get("prioridad", "Sin asignar"))
-            rows.append({
-                "id": f"adm_ver_{t['numero']}",
-                "title": f"{e}{p} Ticket #{t['numero']}"[:24],
-                "description": f"{t.get('hotel', '')} · {t['descripcion'][:40]}"[:72]
-            })
-        if rows:
-            enviar_lista(
-                ADMIN_PHONE,
-                "Seleccione un ticket para ver opciones:",
-                "📋 Seleccionar ticket",
-                [{"title": "Tickets abiertos", "rows": rows}]
-            )
+        enviar_lista_seleccion_ticket(tickets)
         return
 
     if texto_lower.startswith("h "):
