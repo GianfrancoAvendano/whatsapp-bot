@@ -258,21 +258,46 @@ def enviar_menu_principal(telefono):
 
 def enviar_prompt_nuevo_reporte(telefono):
     """Envia el prompt de nuevo reporte con botones Listo/Cancelar integrados."""
-    enviar_botones(
-        telefono,
-        "🛠️ *Nuevo reporte*\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Describanos el problema o consulta.\n\n"
-        "📝 Puede enviar texto\n"
-        "📸 Puede enviar imagenes/screenshots\n\n"
-        "Cuando haya terminado, presione *Listo*.",
-        [
-            {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
-            {"id": "btn_cancelar", "title": "🚫 Cancelar"},
-        ],
-        texto_footer="Puede seguir enviando mensajes e imagenes"
-    )
-    set_estado(telefono, "acumulando_nuevo")
+    # Verificar si hay mensaje/imagen guardada del primer contacto
+    datos = conversaciones.get(telefono, {})
+    mensaje_guardado = datos.pop("mensaje_guardado", None)
+    imagen_guardada = datos.pop("imagen_guardada", None)
+    if mensaje_guardado or imagen_guardada:
+        # Pre-cargar mensaje guardado
+        enviar_botones(
+            telefono,
+            "🛠️ *Nuevo reporte*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "✅ Ya registramos su mensaje anterior.\n\n"
+            "Puede seguir enviando mas detalles o imagenes.\n"
+            "Cuando haya terminado, presione *Listo*.",
+            [
+                {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="Puede seguir enviando mensajes e imagenes"
+        )
+        set_estado(telefono, "acumulando_nuevo")
+        if mensaje_guardado:
+            agregar_al_buffer(telefono, "nuevo", texto=mensaje_guardado)
+        if imagen_guardada:
+            procesar_imagen(telefono, imagen_guardada, "nuevo")
+    else:
+        enviar_botones(
+            telefono,
+            "🛠️ *Nuevo reporte*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Describanos el problema o consulta.\n\n"
+            "📝 Puede enviar texto\n"
+            "📸 Puede enviar imagenes/screenshots\n\n"
+            "Cuando haya terminado, presione *Listo*.",
+            [
+                {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
+                {"id": "btn_cancelar", "title": "🚫 Cancelar"},
+            ],
+            texto_footer="Puede seguir enviando mensajes e imagenes"
+        )
+        set_estado(telefono, "acumulando_nuevo")
 
 
 def enviar_prompt_agregar_info(telefono):
@@ -1991,48 +2016,36 @@ def recibir_mensaje():
                 return jsonify({"status": "ok"}), 200
 
             if tipo_mensaje == "text":
-                if es_saludo(texto) and not es_descripcion_problema(texto):
-                    if estado is None:
-                        enviar_mensaje(
-                            telefono,
-                            "👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                            "━━━━━━━━━━━━━━━━━━━━\n\n"
-                            "Somos su aliado en soporte tecnico y servicios de TI."
-                        )
-                    enviar_menu_principal(telefono)
-                    set_estado(telefono, "menu")
-                else:
-                    enviar_botones(
+                if estado is None:
+                    enviar_mensaje(
                         telefono,
                         "👋 *Bienvenido/a a IT Support and Services SAC*\n"
                         "━━━━━━━━━━━━━━━━━━━━\n\n"
-                        "📝 Estamos registrando su reporte.\n\n"
-                        "Envie todos los detalles que necesite.\n"
-                        "Cuando haya terminado, presione *Listo*.",
-                        [
-                            {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
-                            {"id": "btn_cancelar", "title": "🚫 Cancelar"},
-                        ],
-                        texto_footer="Puede seguir enviando mensajes e imagenes"
+                        "Somos su aliado en soporte tecnico y servicios de TI."
                     )
-                    set_estado(telefono, "acumulando_nuevo")
-                    agregar_al_buffer(telefono, "nuevo", texto=texto_original)
+                # Guardar mensaje si parece un problema (para no perderlo)
+                if not es_saludo(texto) or es_descripcion_problema(texto):
+                    if telefono not in conversaciones:
+                        conversaciones[telefono] = {}
+                    conversaciones[telefono]["mensaje_guardado"] = texto_original
+                    enviar_mensaje(telefono, "📝 _Ya guardamos su mensaje, no necesita repetirlo._")
+                enviar_menu_principal(telefono)
+                set_estado(telefono, "menu")
             elif tipo_mensaje == "image":
-                enviar_botones(
-                    telefono,
-                    "👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "📝 Estamos registrando su reporte.\n\n"
-                    "Envie todos los detalles que necesite.\n"
-                    "Cuando haya terminado, presione *Listo*.",
-                    [
-                        {"id": "btn_listo_nuevo", "title": "✅ Listo, enviar"},
-                        {"id": "btn_cancelar", "title": "🚫 Cancelar"},
-                    ],
-                    texto_footer="Puede seguir enviando mensajes e imagenes"
-                )
-                set_estado(telefono, "acumulando_nuevo")
-                procesar_imagen(telefono, mensaje, "nuevo")
+                if estado is None:
+                    enviar_mensaje(
+                        telefono,
+                        "👋 *Bienvenido/a a IT Support and Services SAC*\n"
+                        "━━━━━━━━━━━━━━━━━━━━\n\n"
+                        "Somos su aliado en soporte tecnico y servicios de TI."
+                    )
+                # Guardar imagen para no perderla
+                if telefono not in conversaciones:
+                    conversaciones[telefono] = {}
+                conversaciones[telefono]["imagen_guardada"] = mensaje
+                enviar_mensaje(telefono, "📸 _Ya guardamos su imagen, no necesita reenviarla._")
+                enviar_menu_principal(telefono)
+                set_estado(telefono, "menu")
             elif tipo_mensaje == "interactive":
                 if button_id == "menu_nuevo":
                     enviar_prompt_nuevo_reporte(telefono)
@@ -2051,6 +2064,10 @@ def recibir_mensaje():
             if button_id == "menu_nuevo" or texto == "1":
                 enviar_prompt_nuevo_reporte(telefono)
             elif button_id == "menu_consultar" or texto == "2":
+                # Limpiar mensaje guardado si habia
+                if telefono in conversaciones:
+                    conversaciones[telefono].pop("mensaje_guardado", None)
+                    conversaciones[telefono].pop("imagen_guardada", None)
                 mostrar_tickets_cliente(telefono)
             else:
                 enviar_mensaje(telefono, "⚠️ Opcion no valida.")
