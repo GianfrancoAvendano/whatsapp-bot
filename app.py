@@ -52,56 +52,31 @@ SALUDOS = [
 ]
 
 MENU_ADMIN = (
-    "⚙️ *PANEL DE ADMINISTRADOR*\n"
-    "*IT Support and Services SAC*\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "📨 *RESPONDER*\n"
-    "  *R[#] [mensaje]*\n"
-    "  _Ej: R24 Ya estamos revisando su caso_\n\n"
-    "📊 *CAMBIAR ESTADO*\n"
-    "  *E[#] [estado]*\n"
-    "  _Ej: E24 En proceso_\n"
-    "  _Estados: Pendiente · En proceso · Resuelto_\n\n"
-    "🎯 *ASIGNAR PRIORIDAD*\n"
-    "  *P[#] [prioridad]*\n"
-    "  _Ej: P24 Alta_\n"
-    "  _Prioridades: Alta · Media · Baja_\n\n"
-    "👤 *ASIGNAR A ASISTENTE*\n"
-    "  *A[#]* — _Ej: A24_\n\n"
-    "🔎 *VER TICKET*\n"
-    "  *V[#]* — _Ej: V24_\n\n"
-    "📋 *LISTADOS*\n"
-    "  *T* — Ver tickets pendientes\n"
-    "  *H [hotel]* — Filtrar por hotel\n"
-    "  *resumen* — Resumen por hotel y prioridad\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    "Escriba *ayuda* para ver este menu"
+    "⚙️ *PANEL DE ADMINISTRADOR*\n\n"
+    "📨 *R[#] [mensaje]* — Responder\n"
+    "📊 *E[#] [estado]* — Cambiar estado\n"
+    "🎯 *P[#] [prioridad]* — Prioridad\n"
+    "👤 *A[#]* — Asignar a asistente\n"
+    "🔎 *V[#]* — Ver ticket\n\n"
+    "📋 *T* — Tickets pendientes\n"
+    "📋 *H [hotel]* — Filtrar por hotel\n"
+    "📋 *resumen* — Resumen por prioridad\n\n"
+    "_Escriba *ayuda* para ver este menu_"
 )
 
 MSG_DESPEDIDA = (
-    "👋 *¡Gracias por contactarnos!*\n"
-    "━━━━━━━━━━━━━━━━━━━━\n\n"
-    "Si necesita ayuda nuevamente, no dude en escribirnos.\n\n"
-    "━━━━━━━━━━━━━━━━━━━━\n"
-    "*IT Support and Services SAC* 🤝"
+    "👋 *¡Gracias por contactarnos!*\n\n"
+    "Si necesita ayuda nuevamente, no dude en escribirnos."
 )
 
 MENU_ASISTENTE = (
-    "⚙️ *PANEL DE ASISTENTE*\n"
-    "*IT Support and Services SAC*\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "📨 *PROPONER RESPUESTA*\n"
-    "  *R[#] [mensaje]*\n"
-    "  _Se envia al admin para revision_\n\n"
-    "📊 *CAMBIAR ESTADO*\n"
-    "  *E[#] [estado]*\n"
-    "  _Estados: Pendiente · En proceso · Resuelto_\n\n"
-    "🔎 *VER TICKET*\n"
-    "  *V[#]* — _Ej: V24_\n\n"
-    "📋 *MIS TICKETS*\n"
-    "  *T* — Ver tickets asignados\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    "Escriba *ayuda* para ver este menu"
+    "⚙️ *PANEL DE ASISTENTE*\n\n"
+    "📨 *R[#] [mensaje]* — Proponer respuesta\n"
+    "  _Se envia al admin para revision_\n"
+    "📊 *E[#] [estado]* — Cambiar estado\n"
+    "🔎 *V[#]* — Ver ticket\n"
+    "📋 *T* — Mis tickets asignados\n\n"
+    "_Escriba *ayuda* para ver este menu_"
 )
 
 
@@ -267,7 +242,6 @@ def enviar_prompt_nuevo_reporte(telefono):
         enviar_botones(
             telefono,
             "🛠️ *Nuevo reporte*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n\n"
             "✅ Ya registramos su mensaje anterior.\n\n"
             "Puede seguir enviando mas detalles o imagenes.\n"
             "Cuando haya terminado, presione *Listo*.",
@@ -286,7 +260,6 @@ def enviar_prompt_nuevo_reporte(telefono):
         enviar_botones(
             telefono,
             "🛠️ *Nuevo reporte*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n\n"
             "Describanos el problema o consulta.\n\n"
             "📝 Puede enviar texto\n"
             "📸 Puede enviar imagenes/screenshots\n\n"
@@ -305,7 +278,7 @@ def enviar_prompt_agregar_info(telefono):
     enviar_botones(
         telefono,
         "✏️ *Agregar informacion*\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "\n"
         "Envie la informacion adicional.\n\n"
         "📝 Puede enviar texto\n"
         "📸 Puede enviar imagenes/screenshots\n\n"
@@ -438,11 +411,9 @@ def enviar_resumen_interactivo():
     enviar_lista(
         ADMIN_PHONE,
         f"📊 *RESUMEN DE TICKETS*\n"
-        f"*{hora_peru().strftime('%d/%m/%Y · %H:%M')}*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📋 *{sum(h['pendientes'] + h['en_proceso'] for h in hoteles.values())} ticket(s) abierto(s)*\n"
-        f"en *{len(hoteles)} hotel(es)*\n\n"
-        f"Seleccione un hotel para ver sus tickets ordenados por prioridad.",
+        f"{hora_peru().strftime('%d/%m/%Y · %H:%M')}\n\n"
+        f"📋 *{sum(h['pendientes'] + h['en_proceso'] for h in hoteles.values())} ticket(s)* en *{len(hoteles)} hotel(es)*\n\n"
+        f"Seleccione un hotel:",
         "🏨 Elegir hotel",
         [{"title": "Hoteles", "rows": rows[:10]}],
         texto_footer="Ordenados por prioridad"
@@ -470,7 +441,6 @@ def enviar_resumen_hotel(nombre_hotel):
         mensaje = (
             f"📊 *RESUMEN COMPLETO*\n"
             f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📋 *{len(todos_tickets)} ticket(s) abierto(s)*\n\n"
         )
         for hotel, tks in hoteles_ordenados.items():
@@ -478,8 +448,7 @@ def enviar_resumen_hotel(nombre_hotel):
             en_proc = sum(1 for t in tks if t["estado"] == "En proceso")
             mensaje += (
                 f"🏨 *{hotel}* — 🟡 {pendientes} · 🔵 {en_proc}\n"
-                f"─────────────────────\n"
-            )
+                )
             for t in tks:
                 e_emoji = estado_emoji(t["estado"])
                 p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
@@ -510,11 +479,9 @@ def enviar_resumen_hotel(nombre_hotel):
         mensaje = (
             f"🏨 *{hotel_encontrado}*\n"
             f"*{ahora.strftime('%d/%m/%Y · %H:%M')}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📋 *{len(tickets_ordenados)} ticket(s) abierto(s)*\n"
             f"  🟡 Pendientes: *{pendientes}*\n"
             f"  🔵 En proceso: *{en_proc}*\n\n"
-            f"─────────────────────\n\n"
         )
         for t in tickets_ordenados:
             e_emoji = estado_emoji(t["estado"])
@@ -979,13 +946,10 @@ def procesar_nuevo_ticket(telefono):
         # Mensaje al cliente
         enviar_mensaje(
             telefono,
-            f"✅ *Ticket #{numero_ticket} registrado*\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏨 *Hotel:* {hotel}\n"
-            f"📝 *Resumen:*\n{resumen}{img_texto}\n\n"
-            f"Un miembro de nuestro equipo se pondra en contacto con usted a la brevedad posible.\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"Gracias por confiar en *IT Support and Services SAC* 🤝"
+            f"✅ *Ticket #{numero_ticket} registrado*\n\n"
+            f"🏨 {hotel}\n"
+            f"📝 {resumen}{img_texto}\n\n"
+            f"Nuestro equipo se pondra en contacto pronto."
         )
         enviar_botones_post_accion(telefono)
 
@@ -993,21 +957,18 @@ def procesar_nuevo_ticket(telefono):
         img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes) if imagenes else ""
         pendientes = buscar_tickets_pendientes()
         notificar_admin(
-            f"🆕 *NUEVO TICKET #{numero_ticket}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🆕 *NUEVO TICKET #{numero_ticket}*\n\n"
             f"🏨 {hotel}\n"
             f"📞 {formatear_telefono(telefono)}\n"
             f"🕐 {hora_peru().strftime('%d/%m/%Y %H:%M')}\n\n"
             f"📝 *Descripcion:*\n{resumen}{img_admin}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 Total pendientes: *{len(pendientes)}*"
         )
         enviar_botones_accion_admin(numero_ticket)
     else:
         enviar_mensaje(
             telefono,
-            "⚠️ Hemos recibido su mensaje. Nuestro equipo se pondra en contacto pronto.\n\n"
-            "Gracias por contactar a *IT Support and Services SAC* 🤝"
+            "⚠️ Hemos recibido su mensaje. Nuestro equipo se pondra en contacto pronto."
         )
     set_estado(telefono, "menu")
 
@@ -1040,11 +1001,8 @@ def procesar_info_adicional(telefono):
         img_texto = f"\n📎 _{len(imagenes)} imagen(es) adjunta(s)_" if imagenes else ""
         enviar_mensaje(
             telefono,
-            f"✅ *Ticket #{ticket_actual} actualizado*\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Su informacion fue agregada exitosamente.{img_texto}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"Gracias por confiar en *IT Support and Services SAC* 🤝"
+            f"✅ *Ticket #{ticket_actual} actualizado*\n\n"
+            f"Su informacion fue agregada exitosamente.{img_texto}"
         )
         enviar_botones_post_accion(telefono)
 
@@ -1052,10 +1010,8 @@ def procesar_info_adicional(telefono):
         img_admin = "\n📎 *Imagenes:*\n" + "\n".join(imagenes) if imagenes else ""
         hotel = get_hotel(telefono) or "Sin especificar"
         notificar_admin(
-            f"📎 *ACTUALIZACION — Ticket #{ticket_actual}*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏨 {hotel}\n"
-            f"📞 {formatear_telefono(telefono)}\n\n"
+            f"📎 *ACTUALIZACION — Ticket #{ticket_actual}*\n\n"
+            f"🏨 {hotel} · 📞 {formatear_telefono(telefono)}\n\n"
             f"📝 *Info nueva:*\n{nueva_info[:200]}{img_admin}"
         )
         enviar_botones_accion_admin(ticket_actual)
@@ -1194,21 +1150,18 @@ def enviar_detalle_ticket_admin(destinatario, ticket):
     p_emoji = prioridad_emoji(ticket.get("prioridad", "Sin asignar"))
     asignado = ticket.get("asignado", "Sin asignar")
     detalle = (
-        f"{e_emoji} *TICKET #{ticket['numero']}*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🏨 *Hotel:* {ticket.get('hotel', 'Sin especificar')}\n"
-        f"📞 *Cliente:* {formatear_telefono(ticket['telefono'])}\n"
-        f"🕐 *Fecha:* {ticket['fecha']}\n"
-        f"📊 *Estado:* {ticket['estado']}\n"
-        f"🎯 *Prioridad:* {p_emoji} {ticket.get('prioridad', 'Sin asignar')}\n"
+        f"{e_emoji} *TICKET #{ticket['numero']}*\n\n"
+        f"🏨 {ticket.get('hotel', 'Sin especificar')}\n"
+        f"📞 {formatear_telefono(ticket['telefono'])}\n"
+        f"🕐 {ticket['fecha']}\n"
+        f"📊 {ticket['estado']} · 🎯 {p_emoji} {ticket.get('prioridad', 'Sin asignar')}\n"
     )
     if asignado and asignado != "Sin asignar":
-        detalle += f"👤 *Asignado:* {asignado_texto(asignado)}\n"
+        detalle += f"👤 {asignado_texto(asignado)}\n"
     if ticket.get("tiempo_resolucion"):
-        detalle += f"⏱️ *Tiempo resolucion:* {ticket['tiempo_resolucion']}\n"
+        detalle += f"⏱️ Resuelto en: {ticket['tiempo_resolucion']}\n"
     detalle += (
-        f"\n─────────────────────\n"
-        f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
+        f"\n📝 *Descripcion:*\n{ticket['descripcion']}\n"
     )
     if ticket.get("imagenes"):
         detalle += f"\n📎 *Imagenes:*\n{ticket['imagenes']}\n"
@@ -1302,16 +1255,12 @@ def completar_asignacion(numero_ticket, tel_asistente, ticket=None):
         e_emoji = estado_emoji(ticket["estado"])
         enviar_mensaje(
             tel_asistente,
-            f"📋 *TICKET #{numero_ticket} ASIGNADO*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🏨 *Hotel:* {ticket.get('hotel', 'Sin especificar')}\n"
-            f"📞 *Cliente:* {formatear_telefono(ticket['telefono'])}\n"
-            f"🕐 *Fecha:* {ticket['fecha']}\n"
-            f"📊 *Estado:* {e_emoji} {ticket['estado']}\n"
-            f"🎯 *Prioridad:* {p_emoji} {ticket.get('prioridad', 'Sin asignar')}\n\n"
-            f"─────────────────────\n"
+            f"📋 *TICKET #{numero_ticket} ASIGNADO*\n\n"
+            f"🏨 {ticket.get('hotel', 'Sin especificar')}\n"
+            f"📞 {formatear_telefono(ticket['telefono'])}\n"
+            f"🕐 {ticket['fecha']}\n"
+            f"📊 {e_emoji} {ticket['estado']} · 🎯 {p_emoji} {ticket.get('prioridad', 'Sin asignar')}\n\n"
             f"📝 *Descripcion:*\n{ticket['descripcion'][:300]}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⚡ *Acciones:*\n"
             f"  *R{numero_ticket}* [mensaje] → Responder\n"
             f"  *E{numero_ticket}* [estado] → Cambiar estado\n"
@@ -1344,9 +1293,9 @@ def procesar_comando_admin(texto_original):
             if h not in hoteles:
                 hoteles[h] = []
             hoteles[h].append(t)
-        lista = f"📋 *TICKETS ABIERTOS ({len(tickets)})*\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        lista = f"📋 *TICKETS ABIERTOS ({len(tickets)})*\n\n"
         for hotel, tks in hoteles.items():
-            lista += f"🏨 *{hotel}*\n─────────────────────\n"
+            lista += f"🏨 *{hotel}*\n\n"
             for t in tks:
                 e_emoji = estado_emoji(t["estado"])
                 p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
@@ -1371,7 +1320,7 @@ def procesar_comando_admin(texto_original):
         if not tickets:
             enviar_mensaje(ADMIN_PHONE, f"✅ *No hay tickets pendientes* para: _{hotel_buscar}_")
             return
-        lista = f"🏨 *TICKETS — {hotel_buscar.upper()}* ({len(tickets)})\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        lista = f"🏨 *TICKETS — {hotel_buscar.upper()}* ({len(tickets)})\n\n"
         for t in tickets:
             e_emoji = estado_emoji(t["estado"])
             p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
@@ -1410,11 +1359,8 @@ def procesar_comando_admin(texto_original):
             if ticket:
                 enviar_mensaje(
                     ticket["telefono"],
-                    f"💬 *Respuesta — Ticket #{ticket['numero']}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{mensaje_respuesta}\n\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"*IT Support and Services SAC*"
+                    f"💬 *Respuesta — Ticket #{ticket['numero']}*\n\n"
+                    f"{mensaje_respuesta}"
                 )
                 # Mostrar botones al cliente para que pueda continuar
                 enviar_botones_post_respuesta(ticket["telefono"], ticket["numero"])
@@ -1483,8 +1429,7 @@ def procesar_comando_admin(texto_original):
                 enviar_lista(
                     ADMIN_PHONE,
                     f"👤 *Asignar Ticket #{numero}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"🏨 {ticket.get('hotel', '')}\n"
+                            f"🏨 {ticket.get('hotel', '')}\n"
                     f"📝 {ticket['descripcion'][:100]}\n\n"
                     f"Seleccione a quien asignar:",
                     "👤 Elegir asistente",
@@ -1529,12 +1474,7 @@ def procesar_comando_admin(texto_original):
                         enviar_mensaje(asignado, msg_estado)
                     enviar_mensaje(
                         ticket["telefono"],
-                        f"📋 *Actualizacion — Ticket #{numero}*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"Su ticket ha sido actualizado a: *{nuevo_estado}*\n\n"
-                        f"Gracias por su paciencia 🙏\n\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"*IT Support and Services SAC*"
+                        f"📋 *Ticket #{numero}* actualizado a: *{nuevo_estado}*"
                     )
                 else:
                     enviar_mensaje(ADMIN_PHONE, f"❌ Error actualizando ticket *#{numero}*")
@@ -1566,7 +1506,7 @@ def procesar_comando_asistente(texto_original, telefono):
             enviar_mensaje(telefono, "✅ *No tienes tickets asignados.* ¡Todo al dia!")
             return
         tickets_ordenados = ordenar_tickets(tickets)
-        lista = f"📋 *MIS TICKETS ASIGNADOS ({len(tickets)})*\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        lista = f"📋 *MIS TICKETS ASIGNADOS ({len(tickets)})*\n\n"
         for t in tickets_ordenados:
             e_emoji = estado_emoji(t["estado"])
             p_emoji = prioridad_emoji(t.get("prioridad", "Sin asignar"))
@@ -1605,11 +1545,9 @@ def procesar_comando_asistente(texto_original, telefono):
                 # Enviar al admin para revision, NO al cliente
                 enviar_mensaje(
                     ADMIN_PHONE,
-                    f"💬 *{nombre} propone respuesta — Ticket #{numero}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"💬 *{nombre} propone respuesta — Ticket #{numero}*\n\n"
                     f"🏨 {ticket.get('hotel', '')} · 📞 {formatear_telefono(ticket['telefono'])}\n\n"
                     f"📝 *Mensaje propuesto:*\n{mensaje_respuesta}\n\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"Para enviar al cliente:\n"
                     f"  *R{numero} {mensaje_respuesta}*"
                 )
@@ -1651,12 +1589,7 @@ def procesar_comando_asistente(texto_original, telefono):
                     enviar_mensaje(ADMIN_PHONE, f"👤 *{nombre}* actualizó ticket:\n{msg_estado}")
                     enviar_mensaje(
                         ticket["telefono"],
-                        f"📋 *Actualizacion — Ticket #{numero}*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"Su ticket ha sido actualizado a: *{nuevo_estado}*\n\n"
-                        f"Gracias por su paciencia 🙏\n\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"*IT Support and Services SAC*"
+                        f"📋 *Ticket #{numero}* actualizado a: *{nuevo_estado}*"
                     )
                 else:
                     enviar_mensaje(telefono, f"❌ Error actualizando ticket *#{numero}*")
@@ -1688,17 +1621,17 @@ def mostrar_tickets_cliente(telefono):
             rows.append({"id": f"ticket_{t['numero']}", "title": title[:24], "description": desc[:72]})
         enviar_lista(
             telefono,
-            f"🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\nTiene *{len(tickets)}* ticket(s) registrado(s).\n\nSeleccione un ticket para ver sus detalles.",
+            f"🔍 *Sus tickets*\n\nTiene *{len(tickets)}* ticket(s) registrado(s).\n\nSeleccione un ticket para ver sus detalles.",
             "📋 Ver tickets",
             [{"title": "Sus tickets", "rows": rows}],
             texto_footer="Escriba 'menu' para volver"
         )
     else:
-        lista = "🔍 *Sus tickets*\n━━━━━━━━━━━━━━━━━━━━\n\n"
+        lista = "🔍 *Sus tickets*\n\n"
         for t in tickets:
             e_emoji = estado_emoji(t["estado"])
             lista += f"{e_emoji} *Ticket #{t['numero']}* · {t['estado']}\n    🕐 {t['fecha']}\n    📝 {t['descripcion']}\n\n"
-        lista += "━━━━━━━━━━━━━━━━━━━━\nEscriba el *numero* del ticket que desea consultar.\n_Escriba *menu* para volver_"
+        lista += "\nEscriba el *numero* del ticket que desea consultar.\n_Escriba *menu* para volver_"
         enviar_mensaje(telefono, lista)
     set_estado(telefono, "listando_tickets")
 
@@ -1706,11 +1639,9 @@ def mostrar_tickets_cliente(telefono):
 def mostrar_detalle_ticket(telefono, ticket):
     e_emoji = estado_emoji(ticket["estado"])
     detalle = (
-        f"{e_emoji} *Ticket #{ticket['numero']}*\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🕐 *Fecha:* {ticket['fecha']}\n"
-        f"📊 *Estado:* {ticket['estado']}\n\n"
-        f"─────────────────────\n"
+        f"{e_emoji} *Ticket #{ticket['numero']}*\n\n"
+        f"🕐 {ticket['fecha']}\n"
+        f"📊 {ticket['estado']}\n\n"
         f"📝 *Descripcion:*\n{ticket['descripcion']}\n"
     )
     if ticket.get("imagenes"):
@@ -1826,11 +1757,8 @@ def recibir_mensaje():
                 if ticket:
                     enviar_mensaje(
                         ticket["telefono"],
-                        f"💬 *Respuesta — Ticket #{ticket['numero']}*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"{texto_original}\n\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"*IT Support and Services SAC*"
+                        f"💬 *Respuesta — Ticket #{ticket['numero']}*\n\n"
+                        f"{texto_original}"
                     )
                     enviar_botones_post_respuesta(ticket["telefono"], ticket["numero"])
                     agregar_info_a_ticket(ticket_num, f"[RESPUESTA ADMIN] {texto_original}")
@@ -1851,10 +1779,8 @@ def recibir_mensaje():
                     admin_estado["ticket"] = ticket_num
                     enviar_mensaje(
                         ADMIN_PHONE,
-                        f"📨 *Responder — Ticket #{ticket_num}*\n"
-                        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"Escriba su respuesta ahora.\n"
-                        f"El siguiente mensaje que envie se enviara al cliente.\n\n"
+                        f"📨 *Responder — Ticket #{ticket_num}*\n\n"
+                        f"Escriba su respuesta. El siguiente mensaje se enviara al cliente.\n\n"
                         f"_Escriba *cancelar* para cancelar_"
                     )
                 # Estado
@@ -1883,12 +1809,7 @@ def recibir_mensaje():
                                     enviar_mensaje(asignado, msg)
                                 enviar_mensaje(
                                     ticket["telefono"],
-                                    f"📋 *Actualizacion — Ticket #{ticket_num}*\n"
-                                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                                    f"Su ticket ha sido actualizado a: *{nuevo_estado}*\n\n"
-                                    f"Gracias por su paciencia 🙏\n\n"
-                                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                                    f"*IT Support and Services SAC*"
+                                    f"📋 *Ticket #{ticket_num}* actualizado a: *{nuevo_estado}*"
                                 )
                             else:
                                 enviar_mensaje(ADMIN_PHONE, f"❌ Error con ticket *#{ticket_num}*")
@@ -2006,9 +1927,7 @@ def recibir_mensaje():
             if not hotel_conocido:
                 enviar_mensaje(
                     telefono,
-                    "👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "Somos su aliado en soporte tecnico y servicios de TI.\n\n"
+                    "👋 *Bienvenido/a a IT Support and Services SAC*\n\n"
                     "Para poder atenderle mejor:\n"
                     "🏨 *¿De que hotel nos esta contactando?*"
                 )
@@ -2019,9 +1938,7 @@ def recibir_mensaje():
                 if estado is None:
                     enviar_mensaje(
                         telefono,
-                        "👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                        "━━━━━━━━━━━━━━━━━━━━\n\n"
-                        "Somos su aliado en soporte tecnico y servicios de TI."
+                        "👋 *Bienvenido/a a IT Support and Services SAC*"
                     )
                 # Guardar mensaje si parece un problema (para no perderlo)
                 if not es_saludo(texto) or es_descripcion_problema(texto):
@@ -2035,9 +1952,7 @@ def recibir_mensaje():
                 if estado is None:
                     enviar_mensaje(
                         telefono,
-                        "👋 *Bienvenido/a a IT Support and Services SAC*\n"
-                        "━━━━━━━━━━━━━━━━━━━━\n\n"
-                        "Somos su aliado en soporte tecnico y servicios de TI."
+                        "👋 *Bienvenido/a a IT Support and Services SAC*"
                     )
                 # Guardar imagen para no perderla
                 if telefono not in conversaciones:
